@@ -36,11 +36,11 @@
 
     --radius: 0.75rem;
 
-    /* Custom colors for TaskNest */
+    /* Custom colors for TaskNest - Light mode uses darker variants */
     --neon-purple: 262 83% 58%;
     --neon-cyan: 199 89% 48%;
-    --neon-pink: 330 81% 60%;
-    --neon-green: 142 71% 45%;
+    --neon-pink: 330 81% 45%;
+    --neon-green: 142 71% 35%;
     
     --gradient-start: 262 83% 58%;
     --gradient-end: 199 89% 48%;
@@ -83,6 +83,12 @@
     --border: 240 6% 15%;
     --input: 240 6% 15%;
     --ring: 262 83% 58%;
+
+    /* Dark mode uses brighter neon colors */
+    --neon-purple: 262 83% 65%;
+    --neon-cyan: 199 89% 55%;
+    --neon-pink: 330 81% 65%;
+    --neon-green: 142 71% 50%;
 
     --sidebar-background: 240 10% 6%;
     --sidebar-foreground: 0 0% 98%;
