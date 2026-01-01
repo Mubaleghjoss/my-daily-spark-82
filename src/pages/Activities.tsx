@@ -73,9 +73,6 @@ export default function Activities() {
   // Form state
   const [newTitle, setNewTitle] = useState('');
   const [newDescription, setNewDescription] = useState('');
-  const [newDate, setNewDate] = useState('');
-  const [newTime, setNewTime] = useState('');
-  const [newCategoryId, setNewCategoryId] = useState<string>('');
   const [newParentId, setNewParentId] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
   const [dialogMode, setDialogMode] = useState<'add' | 'sub'>('add');
@@ -142,9 +139,6 @@ export default function Activities() {
       user_id: user!.id,
       title: newTitle.trim(),
       description: newDescription.trim() || null,
-      scheduled_date: newDate || null,
-      scheduled_time: newTime || null,
-      category_id: newCategoryId || null,
       parent_id: newParentId || null,
       status: 'todo',
     });
@@ -166,9 +160,6 @@ export default function Activities() {
   function resetForm() {
     setNewTitle('');
     setNewDescription('');
-    setNewDate('');
-    setNewTime('');
-    setNewCategoryId('');
     setNewParentId('');
     setIsDialogOpen(false);
     setDialogMode('add');
@@ -190,6 +181,17 @@ export default function Activities() {
       .eq('id', activity.id);
 
     if (!error) {
+      // Record completion in history if marking as done
+      if (nextStatus === 'done') {
+        await supabase.from('activity_completions').insert({
+          user_id: user!.id,
+          activity_id: activity.id,
+        });
+        toast({ 
+          title: 'Selesai! ✓', 
+          description: `${activity.title} tercatat selesai`
+        });
+      }
       fetchActivities();
     }
   }
@@ -381,65 +383,40 @@ export default function Activities() {
                 </DialogTitle>
               </DialogHeader>
               <form onSubmit={handleAddActivity} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="title">Judul</Label>
-                  <Input
-                    id="title"
-                    placeholder={dialogMode === 'sub' ? "Nama sub-aktivitas..." : "Nama aktivitas..."}
-                    value={newTitle}
-                    onChange={(e) => setNewTitle(e.target.value)}
-                    required
-                    autoFocus
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="description">Deskripsi (opsional)</Label>
-                  <Textarea
-                    id="description"
-                    placeholder="Detail aktivitas..."
-                    value={newDescription}
-                    onChange={(e) => setNewDescription(e.target.value)}
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
+                {dialogMode === 'add' ? (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="title">Nama Aktivitas</Label>
+                      <Input
+                        id="title"
+                        placeholder="Contoh: Olahraga pagi 🏃"
+                        value={newTitle}
+                        onChange={(e) => setNewTitle(e.target.value)}
+                        required
+                        autoFocus
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="description">Deskripsi (opsional)</Label>
+                      <Textarea
+                        id="description"
+                        placeholder="Detail aktivitas..."
+                        value={newDescription}
+                        onChange={(e) => setNewDescription(e.target.value)}
+                      />
+                    </div>
+                  </>
+                ) : (
                   <div className="space-y-2">
-                    <Label htmlFor="date">Tanggal</Label>
+                    <Label htmlFor="subTitle">Nama Sub-Aktivitas</Label>
                     <Input
-                      id="date"
-                      type="date"
-                      value={newDate}
-                      onChange={(e) => setNewDate(e.target.value)}
+                      id="subTitle"
+                      placeholder="Contoh: Push up 20x"
+                      value={newTitle}
+                      onChange={(e) => setNewTitle(e.target.value)}
+                      required
+                      autoFocus
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="time">Waktu</Label>
-                    <Input
-                      id="time"
-                      type="time"
-                      value={newTime}
-                      onChange={(e) => setNewTime(e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                {dialogMode === 'add' && (
-                  <div className="space-y-2">
-                    <Label>Parent Aktivitas (untuk nested)</Label>
-                    <Select value={newParentId} onValueChange={setNewParentId}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Pilih parent (opsional)" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="">Tidak ada parent</SelectItem>
-                        {flatActivities.map((act) => (
-                          <SelectItem key={act.id} value={act.id}>
-                            {act.title}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
                   </div>
                 )}
 
