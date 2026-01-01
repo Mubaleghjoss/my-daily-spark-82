@@ -32,6 +32,7 @@ import {
   Loader2,
   MoreHorizontal,
   Plus,
+  PlusCircle,
   Trash2,
 } from 'lucide-react';
 import {
@@ -77,6 +78,8 @@ export default function Activities() {
   const [newCategoryId, setNewCategoryId] = useState<string>('');
   const [newParentId, setNewParentId] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
+  const [dialogMode, setDialogMode] = useState<'add' | 'sub'>('add');
+  const [selectedParentTitle, setSelectedParentTitle] = useState('');
 
   useEffect(() => {
     if (user) {
@@ -149,17 +152,34 @@ export default function Activities() {
     if (error) {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
     } else {
-      toast({ title: 'Berhasil!', description: 'Aktivitas berhasil ditambahkan' });
-      setNewTitle('');
-      setNewDescription('');
-      setNewDate('');
-      setNewTime('');
-      setNewCategoryId('');
-      setNewParentId('');
-      setIsDialogOpen(false);
+      toast({ title: 'Berhasil!', description: dialogMode === 'sub' ? 'Sub-aktivitas berhasil ditambahkan' : 'Aktivitas berhasil ditambahkan' });
+      resetForm();
       fetchActivities();
+      // Auto expand parent if adding sub-activity
+      if (newParentId) {
+        setExpandedIds((prev) => new Set([...prev, newParentId]));
+      }
     }
     setSubmitting(false);
+  }
+
+  function resetForm() {
+    setNewTitle('');
+    setNewDescription('');
+    setNewDate('');
+    setNewTime('');
+    setNewCategoryId('');
+    setNewParentId('');
+    setIsDialogOpen(false);
+    setDialogMode('add');
+    setSelectedParentTitle('');
+  }
+
+  function openAddSubActivity(parentId: string, parentTitle: string) {
+    setNewParentId(parentId);
+    setSelectedParentTitle(parentTitle);
+    setDialogMode('sub');
+    setIsDialogOpen(true);
   }
 
   async function toggleStatus(activity: Activity) {
@@ -270,6 +290,17 @@ export default function Activities() {
 
           {getStatusBadge(activity.status)}
 
+          {/* Add Sub-Activity Button */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="opacity-0 group-hover:opacity-100 text-primary hover:text-primary hover:bg-primary/10"
+            onClick={() => openAddSubActivity(activity.id, activity.title)}
+            title="Tambah sub-aktivitas"
+          >
+            <PlusCircle className="h-4 w-4" />
+          </Button>
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100">
@@ -277,6 +308,13 @@ export default function Activities() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={() => openAddSubActivity(activity.id, activity.title)}
+                className="text-primary"
+              >
+                <PlusCircle className="h-4 w-4 mr-2" />
+                Tambah Sub-Aktivitas
+              </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => deleteActivity(activity.id)}
                 className="text-destructive"
@@ -324,26 +362,34 @@ export default function Activities() {
             <p className="text-muted-foreground">Kelola semua kegiatan harianmu</p>
           </div>
 
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <Dialog open={isDialogOpen} onOpenChange={(open) => {
+            if (!open) resetForm();
+            setIsDialogOpen(open);
+          }}>
             <DialogTrigger asChild>
-              <Button className="gradient-primary glow-primary">
+              <Button className="gradient-primary glow-primary" onClick={() => setDialogMode('add')}>
                 <Plus className="w-4 h-4 mr-2" />
                 Tambah Aktivitas
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
-                <DialogTitle>Tambah Aktivitas Baru</DialogTitle>
+                <DialogTitle>
+                  {dialogMode === 'sub' 
+                    ? `Tambah Sub-Aktivitas untuk "${selectedParentTitle}"` 
+                    : 'Tambah Aktivitas Baru'}
+                </DialogTitle>
               </DialogHeader>
               <form onSubmit={handleAddActivity} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="title">Judul</Label>
                   <Input
                     id="title"
-                    placeholder="Nama aktivitas..."
+                    placeholder={dialogMode === 'sub' ? "Nama sub-aktivitas..." : "Nama aktivitas..."}
                     value={newTitle}
                     onChange={(e) => setNewTitle(e.target.value)}
                     required
+                    autoFocus
                   />
                 </div>
 
@@ -378,26 +424,30 @@ export default function Activities() {
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label>Parent Aktivitas (untuk nested)</Label>
-                  <Select value={newParentId} onValueChange={setNewParentId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Pilih parent (opsional)" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="">Tidak ada parent</SelectItem>
-                      {flatActivities.map((act) => (
-                        <SelectItem key={act.id} value={act.id}>
-                          {act.title}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                {dialogMode === 'add' && (
+                  <div className="space-y-2">
+                    <Label>Parent Aktivitas (untuk nested)</Label>
+                    <Select value={newParentId} onValueChange={setNewParentId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Pilih parent (opsional)" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">Tidak ada parent</SelectItem>
+                        {flatActivities.map((act) => (
+                          <SelectItem key={act.id} value={act.id}>
+                            {act.title}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
 
                 <Button type="submit" className="w-full gradient-primary" disabled={submitting}>
                   {submitting ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : dialogMode === 'sub' ? (
+                    'Tambah Sub-Aktivitas'
                   ) : (
                     'Tambah Aktivitas'
                   )}
