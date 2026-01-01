@@ -5,11 +5,18 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { 
   ChevronLeft, 
   ChevronRight, 
   Calendar as CalendarIcon,
   Check,
+  Clock,
   Loader2 
 } from 'lucide-react';
 import { 
@@ -26,7 +33,6 @@ import {
   startOfYear,
   endOfYear,
   eachMonthOfInterval,
-  eachWeekOfInterval,
   addWeeks,
   subWeeks,
   addYears,
@@ -40,12 +46,18 @@ type ViewMode = 'day' | 'week' | 'month' | 'year';
 interface Activity {
   id: string;
   title: string;
+  parent_id: string | null;
 }
 
 interface Completion {
   id: string;
   activity_id: string;
   completed_at: string;
+}
+
+interface CompletionDetail {
+  activity: Activity;
+  completions: Completion[];
 }
 
 export default function Calendar() {
@@ -55,6 +67,10 @@ export default function Calendar() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [completions, setCompletions] = useState<Completion[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // Popup state
+  const [selectedActivity, setSelectedActivity] = useState<CompletionDetail | null>(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -65,12 +81,11 @@ export default function Calendar() {
   async function fetchData() {
     setLoading(true);
     
-    // Fetch all activities
+    // Fetch ALL activities (including sub-activities)
     const { data: actData } = await supabase
       .from('activities')
-      .select('id, title')
-      .eq('user_id', user!.id)
-      .is('parent_id', null);
+      .select('id, title, parent_id')
+      .eq('user_id', user!.id);
     
     setActivities(actData || []);
 
@@ -125,14 +140,38 @@ export default function Calendar() {
     });
   }
 
-  function getCompletedActivitiesForDate(date: Date) {
+  function getCompletedActivitiesForDate(date: Date): CompletionDetail[] {
     const dateCompletions = getCompletionsForDate(date);
     const activityIds = [...new Set(dateCompletions.map(c => c.activity_id))];
-    return activities.filter(a => activityIds.includes(a.id));
+    
+    return activityIds.map(actId => {
+      const activity = activities.find(a => a.id === actId);
+      const actCompletions = dateCompletions.filter(c => c.activity_id === actId);
+      return {
+        activity: activity || { id: actId, title: 'Aktivitas', parent_id: null },
+        completions: actCompletions
+      };
+    });
+  }
+
+  function getActivityLabel(activity: Activity): string {
+    if (activity.parent_id) {
+      const parent = activities.find(a => a.id === activity.parent_id);
+      return parent ? `${parent.title} → ${activity.title}` : activity.title;
+    }
+    return activity.title;
+  }
+
+  function openDetail(detail: CompletionDetail) {
+    setSelectedActivity(detail);
+    setIsDetailOpen(true);
   }
 
   function renderDayView() {
-    const completedActivities = getCompletedActivitiesForDate(currentDate);
+    const completedDetails = getCompletedActivitiesForDate(currentDate);
+    
+    // Get all activities to show (both main and sub)
+    const allActivitiesToShow = activities;
     
     return (
       <div className="space-y-4">
@@ -141,20 +180,42 @@ export default function Calendar() {
         </h2>
         
         <div className="grid gap-3">
-          {activities.map(activity => {
-            const isCompleted = completedActivities.some(a => a.id === activity.id);
+          {allActivitiesToShow.map(activity => {
+            const detail = completedDetails.find(d => d.activity.id === activity.id);
+            const isCompleted = !!detail;
+            const isSubActivity = !!activity.parent_id;
+            
             return (
               <div 
                 key={activity.id}
+                onClick={() => detail && openDetail(detail)}
                 className={cn(
-                  "flex items-center justify-between p-4 rounded-lg border",
-                  isCompleted ? "bg-neon-green/10 border-neon-green/30" : "bg-muted/30 border-border"
+                  "flex items-center justify-between p-4 rounded-lg border transition-colors",
+                  isCompleted 
+                    ? "bg-neon-green/10 border-neon-green/30 cursor-pointer hover:bg-neon-green/20" 
+                    : "bg-muted/30 border-border",
+                  isSubActivity && "ml-6"
                 )}
               >
-                <span className={isCompleted ? "text-neon-green" : "text-muted-foreground"}>
-                  {activity.title}
-                </span>
-                {isCompleted && <Check className="h-5 w-5 text-neon-green" />}
+                <div className="flex items-center gap-2">
+                  {isSubActivity && (
+                    <span className="text-muted-foreground text-sm">↳</span>
+                  )}
+                  <span className={isCompleted ? "text-neon-green" : "text-muted-foreground"}>
+                    {activity.title}
+                  </span>
+                  {isSubActivity && (
+                    <Badge variant="outline" className="text-xs">sub</Badge>
+                  )}
+                </div>
+                {isCompleted && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">
+                      {format(new Date(detail.completions[0].completed_at), 'HH:mm')}
+                    </span>
+                    <Check className="h-5 w-5 text-neon-green" />
+                  </div>
+                )}
               </div>
             );
           })}
@@ -182,7 +243,7 @@ export default function Calendar() {
         
         <div className="grid grid-cols-7 gap-2">
           {days.map(day => {
-            const dayCompletions = getCompletedActivitiesForDate(day);
+            const dayDetails = getCompletedActivitiesForDate(day);
             const isToday = isSameDay(day, new Date());
             
             return (
@@ -197,18 +258,19 @@ export default function Calendar() {
                   {format(day, 'EEE d', { locale: localeId })}
                 </div>
                 <div className="space-y-1">
-                  {dayCompletions.slice(0, 3).map(activity => (
+                  {dayDetails.slice(0, 3).map(detail => (
                     <div 
-                      key={activity.id}
-                      className="flex items-center gap-1 text-xs text-neon-green truncate"
+                      key={detail.activity.id}
+                      onClick={() => openDetail(detail)}
+                      className="flex items-center gap-1 text-xs text-neon-green truncate cursor-pointer hover:underline"
                     >
                       <Check className="h-3 w-3 flex-shrink-0" />
-                      <span className="truncate">{activity.title}</span>
+                      <span className="truncate">{detail.activity.title}</span>
                     </div>
                   ))}
-                  {dayCompletions.length > 3 && (
+                  {dayDetails.length > 3 && (
                     <span className="text-xs text-muted-foreground">
-                      +{dayCompletions.length - 3} lainnya
+                      +{dayDetails.length - 3} lainnya
                     </span>
                   )}
                 </div>
@@ -243,7 +305,7 @@ export default function Calendar() {
           ))}
           
           {days.map(day => {
-            const dayCompletions = getCompletedActivitiesForDate(day);
+            const dayDetails = getCompletedActivitiesForDate(day);
             const isToday = isSameDay(day, new Date());
             const isCurrentMonth = isSameMonth(day, currentDate);
             
@@ -266,12 +328,12 @@ export default function Calendar() {
                 )}>
                   {format(day, 'd')}
                 </span>
-                {dayCompletions.length > 0 && (
+                {dayDetails.length > 0 && (
                   <div className="flex gap-0.5">
-                    {dayCompletions.slice(0, 3).map((_, i) => (
+                    {dayDetails.slice(0, 3).map((detail, i) => (
                       <div key={i} className="w-1.5 h-1.5 rounded-full bg-neon-green" />
                     ))}
-                    {dayCompletions.length > 3 && (
+                    {dayDetails.length > 3 && (
                       <span className="text-[8px] text-muted-foreground">+</span>
                     )}
                   </div>
@@ -408,6 +470,55 @@ export default function Calendar() {
           </div>
         </div>
       </div>
+
+      {/* Detail Popup */}
+      <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Check className="h-5 w-5 text-neon-green" />
+              Detail Penyelesaian
+            </DialogTitle>
+          </DialogHeader>
+          
+          {selectedActivity && (
+            <div className="space-y-4">
+              <div className="p-4 rounded-lg bg-neon-green/10 border border-neon-green/30">
+                <h3 className="font-semibold text-lg">
+                  {getActivityLabel(selectedActivity.activity)}
+                </h3>
+                {selectedActivity.activity.parent_id && (
+                  <Badge variant="outline" className="mt-2">Sub-aktivitas</Badge>
+                )}
+              </div>
+
+              <div className="space-y-3">
+                <h4 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                  <Clock className="h-4 w-4" />
+                  Waktu Penyelesaian
+                </h4>
+                
+                {selectedActivity.completions.map((comp) => (
+                  <div 
+                    key={comp.id}
+                    className="flex items-center justify-between p-3 rounded-lg bg-muted/50"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-2 h-2 rounded-full bg-neon-green" />
+                      <span>
+                        {format(new Date(comp.completed_at), 'EEEE, d MMMM yyyy', { locale: localeId })}
+                      </span>
+                    </div>
+                    <span className="font-mono text-primary">
+                      {format(new Date(comp.completed_at), 'HH:mm:ss')}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }
