@@ -4,16 +4,25 @@ import { supabase } from '@/integrations/supabase/client';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { Bell, BellOff, Pause, Play, RotateCcw, Timer, Coffee, Target } from 'lucide-react';
+import { Bell, BellOff, Pause, Play, RotateCcw, Timer, Coffee, Target, Settings, Volume2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 type SessionType = 'focus' | 'short_break' | 'long_break';
 
-const DURATIONS: Record<SessionType, number> = {
-  focus: 25 * 60,
-  short_break: 5 * 60,
-  long_break: 15 * 60,
+const DEFAULT_DURATIONS: Record<SessionType, number> = {
+  focus: 25,
+  short_break: 5,
+  long_break: 15,
 };
 
 const LABELS: Record<SessionType, string> = {
@@ -23,26 +32,59 @@ const LABELS: Record<SessionType, string> = {
 };
 
 const STORAGE_KEY = 'pomodoro_timer_state';
+const SETTINGS_KEY = 'pomodoro_settings';
 
 interface TimerState {
   sessionType: SessionType;
-  startTime: number; // timestamp when timer started
-  duration: number; // total duration in seconds
+  startTime: number;
+  duration: number;
   isRunning: boolean;
   sessionsCompleted: number;
 }
+
+interface TimerSettings {
+  focus: number;
+  short_break: number;
+  long_break: number;
+}
+
+// Notification sound as base64
+const NOTIFICATION_SOUND = 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdXuHiYyLh4F4cGhgW1lbYGdudHmBgoF/gYWHg4F9d3Fral9ZVlhbY2tze4CChYiIiIeGg3x0bGdjXllXWl5la3N7gYSIi4qKh4N/eXJraGNdWFZXWl5ka3J3fIKFh4qLioqHg394cGtmYFpXV1hcYmhudnuAhYiKjIuLiYaBeXJsZ2FcWFZXWmBmbnV8gYWIioyLi4mFgXp0bmllX1pXVlhcYmlvdnyChYiKjIyLiYV/eHFrZmBbV1ZXWl5lbHR7gIWIioyMi4mGgXp0bmllX1pWVlhbYmludXuBhomLjIyKiYaCfHZvamRfWldWV1peZWxze4CFiIqMjIuKh4J8dnBqZF9bV1ZYW19mbHR6gIWIiouMjIqIg356c21oY15aV1dZXGJpbnV7gIWIiouMjIqIhIF7dXBqZWBcWFdYW15kanuAhIeKi4yLioiFgHp0b2plYFtYV1hbX2VsdHqAhIiKi4yMioiEgHp1cGtmYV1ZWFlbXmVrcnl/hIeKi4yMi4mGgXx2cWxnYl5aWFlbXmRqcXh+g4eJi4yMi4mHg356dXBrZmJeWlhYWl1jand+g4aJi4yMjIqIhYB7dnFsZ2NeWlhYWlxiaG93fYKGiYuMjYyKiIWAfXhzcGtnY19bWVlbXWJobnV7gIWIiovMjIqIhYF9eHNua2djX1tZWVtdYmdtdHqAhIiKi4yNjImHhIF9eHRwa2djX1tZWVpbYGZsc3l/g4eKi4yNjYqIhYF+eXRxbGhlYFxZWVlbXmNpb3Z8gYWIi4yNjYuJhoJ/endycW1pZGBeW1laWlxhZmxzeoCAhIiKjI2NjIqHhIF/endzcW5qZmFeW1pZWVteY2lvdXuAgYSHiovMjYyKiIWBf3t3c3FuamdiXltaWVlbX2Nnb3V6gIGEiIqLjI2Mi4mGg4B8eHZycW1pZWFeW1pZWVteYmhudXuAgYSHiovMjI2MioiGg39/end0cnBsaGRgXVtaWVpbXmNpb3Z7gIGEh4qLjI2NjIqIhoN/fHh1c3FuamZjX1xaWlpaXGFnbnR6f4GEh4qLjI2NjIqIhoOAfXl2c3FuamZjX1xaWllaW19kaXB2fICDhoqLjI2NjYuJh4SBfnp3dHJwa2djYF1bWlpaW1xhaG51e4CBhIeKi4yNjYyKiIaEgH15dnNwbmpmYl9cW1paWlteY2lwdnuAgYSHiouMjY2MioiGg4B9eXZzcW5qZmJfXFtaWlpbX2RpcHZ7gIGEh4qLjI2NjIqIhoSAfXl2c3BuamZiX1xbWlpaW19kaXB2fICDhoqLjI2NjYuJh4SBfnp3dHJwa2djYF1bWlpaXF5jaG91e4CBhIeKi4yNjYyKiIaEgH15dnNwbmpmYl9cW1paWltfZGpwdnuAgYSHiouMjY2Mi4mHhIF+end0cnBramZjYF1bWlpaW19ka3F3fICDhoqLjI2NjYuJh4SBfnp3dHJwbGlmY2BdW1paWlxfZGtxd3yAgYSHiouMjY2MioiGg4B9end0cnBsamdiX1xbWlpaW19ka3F3fICDhoqLjI2NjIuJh4SBfnp3dHJwbGlmY2BdW1paWlxfZGtxd3yAgYSHiouMjY2Mi4mHhIF+end0cnBsamdiX1xbWlpaXF9ka3F3fICDhoqLjI2NjIuJhoSBfnp3dHJwbGhmY2BdW1paWlxfZGtxd3yAgYSHiouMjY2Mi4mHhIF+end0cnBsamdiX1xbWlpaW19ka3J3fICDhoqLjI2NjIuJh4SBfnp3dHJwbGlmY2BdW1paWlxgZWxxd3yAgYSHiouMjY2Mi4mHhIF+end0cnBramZjYF1bWlpaW19ka3F3fICDhoqLjI2NjIuJh4SBfnp3dHJwbGlmY2BdW1paWlxfZGtxd3yAgYSHiouMjY2Mi4mHhIF+endz';
 
 export default function Pomodoro() {
   const { user } = useAuth();
   const { toast } = useToast();
 
+  // Load settings from localStorage
+  const loadSettings = (): TimerSettings => {
+    const saved = localStorage.getItem(SETTINGS_KEY);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        return { ...DEFAULT_DURATIONS };
+      }
+    }
+    return { ...DEFAULT_DURATIONS };
+  };
+
+  const [settings, setSettings] = useState<TimerSettings>(loadSettings);
   const [sessionType, setSessionType] = useState<SessionType>('focus');
-  const [timeLeft, setTimeLeft] = useState(DURATIONS.focus);
+  const [timeLeft, setTimeLeft] = useState(settings.focus * 60);
   const [isRunning, setIsRunning] = useState(false);
   const [sessionsCompleted, setSessionsCompleted] = useState(0);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [tempSettings, setTempSettings] = useState<TimerSettings>(settings);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const hasCompletedRef = useRef(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Initialize audio element
+  useEffect(() => {
+    audioRef.current = new Audio(NOTIFICATION_SOUND);
+    audioRef.current.volume = 0.5;
+  }, []);
 
   // Request notification permission on mount
   useEffect(() => {
@@ -61,7 +103,6 @@ export default function Pomodoro() {
         setSessionsCompleted(state.sessionsCompleted);
         
         if (state.isRunning) {
-          // Calculate remaining time based on when it was started
           const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
           const remaining = state.duration - elapsed;
           
@@ -69,7 +110,6 @@ export default function Pomodoro() {
             setTimeLeft(remaining);
             setIsRunning(true);
           } else {
-            // Timer has completed while away
             setTimeLeft(0);
             handleSessionComplete(state.sessionType, state.sessionsCompleted);
           }
@@ -82,7 +122,6 @@ export default function Pomodoro() {
     }
   }, []);
 
-  // Save state whenever it changes
   const saveState = useCallback((running: boolean, type: SessionType, duration: number, sessions: number, startTime?: number) => {
     const state: TimerState = {
       sessionType: type,
@@ -93,6 +132,23 @@ export default function Pomodoro() {
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }, []);
+
+  // Play notification sound
+  const playSound = useCallback(() => {
+    if (audioRef.current) {
+      audioRef.current.currentTime = 0;
+      audioRef.current.play().catch(() => {});
+    }
+  }, []);
+
+  // Test notification sound
+  const testNotificationSound = () => {
+    playSound();
+    toast({
+      title: '🔔 Tes Suara',
+      description: 'Suara notifikasi berhasil diputar!',
+    });
+  };
 
   // Send notification
   const sendNotification = useCallback((title: string, body: string) => {
@@ -105,19 +161,14 @@ export default function Pomodoro() {
         requireInteraction: true,
       });
 
-      // Play sound
-      try {
-        const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdXuHiYyLh4F4cGhgW1lbYGdudHmBgoF/gYWHg4F9d3Fral9ZVlhbY2tze4CChYiIiIeGg3x0bGdjXllXWl5la3N7gYSIi4qKh4N/eXJraGNdWFZXWl5ka3J3fIKFh4qLioqHg394cGtmYFpXV1hcYmhudnuAhYiKjIuLiYaBeXJsZ2FcWFZXWmBmbnV8gYWIioyLi4mFgXp0bmllX1pXVlhcYmlvdnyChYiKjIyLiYV/eHFrZmBbV1ZXWl5lbHR7gIWIioyMi4mGgXp0bmllX1pWVlhbYmludXuBhomLjIyKiYaCfHZvamRfWldWV1peZWxze4CFiIqMjIuKh4J8dnBqZF9bV1ZYW19mbHR6gIWIiouMjIqIg356c21oY15aV1dZXGJpbnV7gIWIiouMjIqIhIF7dXBqZWBcWFdYW15kanuAhIeKi4yLioiFgHp0b2plYFtYV1hbX2VsdHqAhIiKi4yMioiEgHp1cGtmYV1ZWFlbXmVrcnl/hIeKi4yMi4mGgXx2cWxnYl5aWFlbXmRqcXh+g4eJi4yMi4mHg356dXBrZmJeWlhYWl1jand+g4aJi4yMjIqIhYB7dnFsZ2NeWlhYWlxiaG93fYKGiYuMjYyKiIWAfXhzcGtnY19bWVlbXWJobnV7gIWIiovMjIqIhYF9eHNua2djX1tZWVtdYmdtdHqAhIiKi4yNjImHhIF9eHRwa2djX1tZWVpbYGZsc3l/g4eKi4yNjYqIhYF+eXRxbGhlYFxZWVlbXmNpb3Z8gYWIi4yNjYuJhoJ/endycW1pZGBeW1laWlxhZmxzeoCAhIiKjI2NjIqHhIF/endzcW5qZmFeW1pZWVteY2lvdXuAgYSHiovMjYyKiIWBf3t3c3FuamdiXltaWVlbX2Nnb3V6gIGEiIqLjI2Mi4mGg4B8eHZycW1pZWFeW1pZWVteYmhudXuAgYSHiovMjI2MioiGg39/end0cnBsaGRgXVtaWVpbXmNpb3Z7gIGEh4qLjI2NjIqIhoN/fHh1c3FuamZjX1xaWlpaXGFnbnR6f4GEh4qLjI2NjIqIhoOAfXl2c3FuamZjX1xaWllaW19kaXB2fICDhoqLjI2NjYuJh4SBfnp3dHJwa2djYF1bWlpaW1xhaG51e4CBhIeKi4yNjYyKiIaEgH15dnNwbmpmYl9cW1paWlteY2lwdnuAgYSHiouMjY2MioiGg4B9eXZzcW5qZmJfXFtaWlpbX2RpcHZ7gIGEh4qLjI2NjIqIhoSAfXl2c3BuamZiX1xbWlpaW19kaXB2fICDhoqLjI2NjYuJh4SBfnp3dHJwa2djYF1bWlpaXF5jaG91e4CBhIeKi4yNjYyKiIaEgH15dnNwbmpmYl9cW1paWltfZGpwdnuAgYSHiouMjY2Mi4mHhIF+end0cnBramZjYF1bWlpaW19ka3F3fICDhoqLjI2NjYuJh4SBfnp3dHJwbGlmY2BdW1paWlxfZGtxd3yAgYSHiouMjY2MioiGg4B9end0cnBsamdiX1xbWlpaW19ka3F3fICDhoqLjI2NjIuJh4SBfnp3dHJwbGlmY2BdW1paWlxfZGtxd3yAgYSHiouMjY2Mi4mHhIF+end0cnBsamdiX1xbWlpaXF9ka3F3fICDhoqLjI2NjIuJhoSBfnp3dHJwbGhmY2BdW1paWlxfZGtxd3yAgYSHiouMjY2Mi4mHhIF+end0cnBsamdiX1xbWlpaW19ka3J3fICDhoqLjI2NjIuJh4SBfnp3dHJwbGlmY2BdW1paWlxgZWxxd3yAgYSHiouMjY2Mi4mHhIF+end0cnBramZjYF1bWlpaW19ka3F3fICDhoqLjI2NjIuJh4SBfnp3dHJwbGlmY2BdW1paWlxfZGtxd3yAgYSHiouMjY2Mi4mHhIF+endz');
-        audio.volume = 0.5;
-        audio.play().catch(() => {});
-      } catch (e) {}
+      playSound();
 
       notification.onclick = () => {
         window.focus();
         notification.close();
       };
     }
-  }, []);
+  }, [playSound]);
 
   const handleSessionComplete = useCallback(async (type?: SessionType, sessions?: number) => {
     const currentType = type || sessionType;
@@ -127,11 +178,10 @@ export default function Pomodoro() {
     setIsRunning(false);
 
     if (currentType === 'focus') {
-      // Save session to database
       if (user) {
         await supabase.from('pomodoro_sessions').insert({
           user_id: user.id,
-          duration_minutes: DURATIONS.focus / 60,
+          duration_minutes: settings.focus,
           session_type: 'focus',
         });
       }
@@ -139,7 +189,6 @@ export default function Pomodoro() {
       const newSessions = currentSessions + 1;
       setSessionsCompleted(newSessions);
 
-      // Send notification
       sendNotification('🎉 Sesi Fokus Selesai!', 'Waktunya istirahat sebentar.');
 
       toast({
@@ -147,7 +196,6 @@ export default function Pomodoro() {
         description: 'Waktunya istirahat sebentar.',
       });
 
-      // Auto switch to break
       let nextType: SessionType;
       if (newSessions % 4 === 0) {
         nextType = 'long_break';
@@ -155,8 +203,8 @@ export default function Pomodoro() {
         nextType = 'short_break';
       }
       setSessionType(nextType);
-      setTimeLeft(DURATIONS[nextType]);
-      saveState(false, nextType, DURATIONS[nextType], newSessions);
+      setTimeLeft(settings[nextType] * 60);
+      saveState(false, nextType, settings[nextType] * 60, newSessions);
     } else {
       sendNotification('💪 Istirahat Selesai!', 'Siap untuk sesi fokus berikutnya?');
       
@@ -165,10 +213,10 @@ export default function Pomodoro() {
         description: 'Siap untuk sesi fokus berikutnya?',
       });
       setSessionType('focus');
-      setTimeLeft(DURATIONS.focus);
-      saveState(false, 'focus', DURATIONS.focus, currentSessions);
+      setTimeLeft(settings.focus * 60);
+      saveState(false, 'focus', settings.focus * 60, currentSessions);
     }
-  }, [sessionType, sessionsCompleted, user, toast, sendNotification, saveState]);
+  }, [sessionType, sessionsCompleted, user, toast, sendNotification, saveState, settings]);
 
   // Timer tick effect
   useEffect(() => {
@@ -213,17 +261,15 @@ export default function Pomodoro() {
     setIsRunning(newIsRunning);
     
     if (newIsRunning) {
-      // Starting timer - save start time
       saveState(true, sessionType, timeLeft, sessionsCompleted, Date.now());
     } else {
-      // Pausing timer - save remaining time
       saveState(false, sessionType, timeLeft, sessionsCompleted);
     }
   }
 
   function resetTimer() {
     setIsRunning(false);
-    const duration = DURATIONS[sessionType];
+    const duration = settings[sessionType] * 60;
     setTimeLeft(duration);
     saveState(false, sessionType, duration, sessionsCompleted);
   }
@@ -231,9 +277,26 @@ export default function Pomodoro() {
   function switchSession(type: SessionType) {
     setIsRunning(false);
     setSessionType(type);
-    const duration = DURATIONS[type];
+    const duration = settings[type] * 60;
     setTimeLeft(duration);
     saveState(false, type, duration, sessionsCompleted);
+  }
+
+  function saveSettings() {
+    setSettings(tempSettings);
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(tempSettings));
+    
+    // Update current timer if not running
+    if (!isRunning) {
+      setTimeLeft(tempSettings[sessionType] * 60);
+      saveState(false, sessionType, tempSettings[sessionType] * 60, sessionsCompleted);
+    }
+    
+    setIsSettingsOpen(false);
+    toast({
+      title: 'Pengaturan Disimpan!',
+      description: 'Durasi timer berhasil diperbarui.',
+    });
   }
 
   function formatTime(seconds: number) {
@@ -242,7 +305,8 @@ export default function Pomodoro() {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   }
 
-  const progress = ((DURATIONS[sessionType] - timeLeft) / DURATIONS[sessionType]) * 100;
+  const totalDuration = settings[sessionType] * 60;
+  const progress = ((totalDuration - timeLeft) / totalDuration) * 100;
 
   return (
     <AppLayout>
@@ -255,9 +319,9 @@ export default function Pomodoro() {
           </p>
         </div>
 
-        {/* Notification Permission */}
-        {notificationPermission !== 'granted' && (
-          <div className="flex justify-center">
+        {/* Notification & Settings */}
+        <div className="flex justify-center gap-2 flex-wrap">
+          {notificationPermission !== 'granted' && (
             <Button 
               variant="outline" 
               onClick={requestNotificationPermission}
@@ -266,11 +330,88 @@ export default function Pomodoro() {
               <Bell className="h-4 w-4" />
               Aktifkan Notifikasi
             </Button>
-          </div>
-        )}
+          )}
+          
+          <Button 
+            variant="outline" 
+            onClick={testNotificationSound}
+            className="gap-2"
+          >
+            <Volume2 className="h-4 w-4" />
+            Tes Suara
+          </Button>
+
+          <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
+            <DialogTrigger asChild>
+              <Button 
+                variant="outline" 
+                className="gap-2"
+                onClick={() => setTempSettings(settings)}
+              >
+                <Settings className="h-4 w-4" />
+                Atur Waktu
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Timer className="h-5 w-5 text-primary" />
+                  Pengaturan Waktu
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="focus-time" className="flex items-center gap-2">
+                    <Target className="h-4 w-4 text-primary" />
+                    Waktu Fokus (menit)
+                  </Label>
+                  <Input
+                    id="focus-time"
+                    type="number"
+                    min={1}
+                    max={120}
+                    value={tempSettings.focus}
+                    onChange={(e) => setTempSettings({ ...tempSettings, focus: parseInt(e.target.value) || 25 })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="short-break" className="flex items-center gap-2">
+                    <Coffee className="h-4 w-4 text-accent" />
+                    Istirahat Pendek (menit)
+                  </Label>
+                  <Input
+                    id="short-break"
+                    type="number"
+                    min={1}
+                    max={30}
+                    value={tempSettings.short_break}
+                    onChange={(e) => setTempSettings({ ...tempSettings, short_break: parseInt(e.target.value) || 5 })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="long-break" className="flex items-center gap-2">
+                    <Coffee className="h-4 w-4 text-neon-green" />
+                    Istirahat Panjang (menit)
+                  </Label>
+                  <Input
+                    id="long-break"
+                    type="number"
+                    min={1}
+                    max={60}
+                    value={tempSettings.long_break}
+                    onChange={(e) => setTempSettings({ ...tempSettings, long_break: parseInt(e.target.value) || 15 })}
+                  />
+                </div>
+                <Button onClick={saveSettings} className="w-full gradient-primary">
+                  Simpan Pengaturan
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
 
         {/* Session Type Tabs */}
-        <div className="flex justify-center gap-2">
+        <div className="flex justify-center gap-2 flex-wrap">
           {(['focus', 'short_break', 'long_break'] as SessionType[]).map((type) => (
             <Button
               key={type}
@@ -397,7 +538,7 @@ export default function Pomodoro() {
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold text-accent">
-                {sessionsCompleted * 25} min
+                {sessionsCompleted * settings.focus} min
               </div>
             </CardContent>
           </Card>
@@ -412,9 +553,9 @@ export default function Pomodoro() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm text-muted-foreground">
-            <p>⏱️ 1 Sesi = 25 menit fokus penuh</p>
-            <p>☕ Istirahat 5 menit setelah setiap sesi</p>
-            <p>🌟 Istirahat panjang 15 menit setelah 4 sesi</p>
+            <p>⏱️ 1 Sesi = {settings.focus} menit fokus penuh</p>
+            <p>☕ Istirahat {settings.short_break} menit setelah setiap sesi</p>
+            <p>🌟 Istirahat panjang {settings.long_break} menit setelah 4 sesi</p>
             <p>🔔 Aktifkan notifikasi agar tidak ketinggalan</p>
             <p>✨ Timer tetap berjalan meski pindah halaman</p>
           </CardContent>
