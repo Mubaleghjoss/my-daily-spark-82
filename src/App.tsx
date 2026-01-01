@@ -8,6 +8,9 @@ import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import Activities from "./pages/Activities";
 import Pomodoro from "./pages/Pomodoro";
+import Calendar from "./pages/Calendar";
+import Analytics from "./pages/Analytics";
+import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -37,9 +40,9 @@ const AppRoutes = () => {
       <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/activities" element={<ProtectedRoute><Activities /></ProtectedRoute>} />
       <Route path="/pomodoro" element={<ProtectedRoute><Pomodoro /></ProtectedRoute>} />
-      <Route path="/calendar" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-      <Route path="/analytics" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-      <Route path="/settings" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+      <Route path="/calendar" element={<ProtectedRoute><Calendar /></ProtectedRoute>} />
+      <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
+      <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   );

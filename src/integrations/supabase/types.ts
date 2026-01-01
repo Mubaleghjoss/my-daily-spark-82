@@ -77,6 +77,35 @@ export type Database = {
           },
         ]
       }
+      activity_completions: {
+        Row: {
+          activity_id: string
+          completed_at: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          activity_id: string
+          completed_at?: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          activity_id?: string
+          completed_at?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "activity_completions_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activities"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       categories: {
         Row: {
           color: string
