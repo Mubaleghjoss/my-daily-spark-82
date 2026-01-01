@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
+import { useEffect } from "react";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import Activities from "./pages/Activities";
@@ -14,6 +15,28 @@ import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
+
+// Initialize theme from localStorage
+function ThemeInitializer() {
+  useEffect(() => {
+    const theme = localStorage.getItem('theme');
+    const themeHue = localStorage.getItem('themeHue');
+    
+    if (theme === 'light') {
+      document.documentElement.classList.remove('dark');
+    } else {
+      document.documentElement.classList.add('dark');
+    }
+    
+    if (themeHue) {
+      document.documentElement.style.setProperty('--neon-purple', `${themeHue} 83% 58%`);
+      document.documentElement.style.setProperty('--primary', `${themeHue} 83% 58%`);
+      document.documentElement.style.setProperty('--ring', `${themeHue} 83% 58%`);
+    }
+  }, []);
+  
+  return null;
+}
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -51,6 +74,7 @@ const AppRoutes = () => {
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
+      <ThemeInitializer />
       <TooltipProvider>
         <Toaster />
         <Sonner />
