@@ -122,6 +122,9 @@ export default function Settings() {
     const newTheme = !isDark;
     setIsDark(newTheme);
     
+    // Add transition class for smooth animation
+    document.documentElement.classList.add('theme-transition');
+    
     if (newTheme) {
       document.documentElement.classList.add('dark');
       localStorage.setItem('theme', 'dark');
@@ -129,6 +132,11 @@ export default function Settings() {
       document.documentElement.classList.remove('dark');
       localStorage.setItem('theme', 'light');
     }
+    
+    // Remove transition class after animation completes
+    setTimeout(() => {
+      document.documentElement.classList.remove('theme-transition');
+    }, 300);
   }
 
   const themeColors = [
