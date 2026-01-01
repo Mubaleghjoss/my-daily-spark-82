@@ -28,7 +28,7 @@ const navItems = [
   { icon: LayoutDashboard, label: 'Dashboard', href: '/' },
   { icon: ListTodo, label: 'Aktivitas', href: '/activities' },
   { icon: Calendar, label: 'Kalender', href: '/calendar' },
-  { icon: Timer, label: 'Pomodoro', href: '/pomodoro' },
+  { icon: Timer, label: 'Focus Timer', href: '/pomodoro' },
   { icon: BarChart3, label: 'Analytics', href: '/analytics' },
   { icon: Settings, label: 'Pengaturan', href: '/settings' },
 ];

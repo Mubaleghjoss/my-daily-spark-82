@@ -112,9 +112,9 @@ export default function Pomodoro() {
       <div className="max-w-2xl mx-auto space-y-8">
         {/* Header */}
         <div className="text-center">
-          <h1 className="text-3xl font-bold gradient-text">Pomodoro Timer</h1>
+          <h1 className="text-3xl font-bold gradient-text">Focus Timer</h1>
           <p className="text-muted-foreground mt-2">
-            Fokus lebih baik dengan teknik Pomodoro
+            Fokus lebih baik dengan teknik waktu terfokus
           </p>
         </div>
 
@@ -248,11 +248,11 @@ export default function Pomodoro() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Timer className="w-5 h-5 text-primary" />
-              Tips Pomodoro
+              Tips Focus Timer
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm text-muted-foreground">
-            <p>🍅 1 Pomodoro = 25 menit fokus penuh</p>
+            <p>⏱️ 1 Sesi = 25 menit fokus penuh</p>
             <p>☕ Istirahat 5 menit setelah setiap sesi</p>
             <p>🌟 Istirahat panjang 15 menit setelah 4 sesi</p>
             <p>📵 Matikan notifikasi selama sesi fokus</p>

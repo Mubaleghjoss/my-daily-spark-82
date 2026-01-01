@@ -139,7 +139,7 @@ export default function Dashboard() {
           <Card className="glass border-border/50">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Sesi Pomodoro
+                Sesi Fokus
               </CardTitle>
               <Flame className="h-4 w-4 text-neon-pink" />
             </CardHeader>
@@ -161,7 +161,7 @@ export default function Dashboard() {
                   <Zap className="w-6 h-6 text-neon-pink" />
                 </div>
                 <div>
-                  <h3 className="font-semibold">Mulai Pomodoro</h3>
+                  <h3 className="font-semibold">Mulai Focus Timer</h3>
                   <p className="text-sm text-muted-foreground">Fokus 25 menit</p>
                 </div>
               </CardContent>
