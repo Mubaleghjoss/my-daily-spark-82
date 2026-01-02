@@ -53,6 +53,7 @@ interface Activity {
   category_id: string | null;
   sort_order: number;
   children?: Activity[];
+  isCompletedToday?: boolean;
 }
 
 interface Category {
@@ -61,11 +62,18 @@ interface Category {
   color: string;
 }
 
+// Get today's date string in local timezone
+function getTodayString() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
 export default function Activities() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [activities, setActivities] = useState<Activity[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [todayCompletions, setTodayCompletions] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -82,6 +90,7 @@ export default function Activities() {
     if (user) {
       fetchActivities();
       fetchCategories();
+      fetchTodayCompletions();
     }
   }, [user]);
 
@@ -108,6 +117,23 @@ export default function Activities() {
       .select('*')
       .eq('user_id', user!.id);
     setCategories(data || []);
+  }
+
+  // Fetch today's completions to determine which activities are done today
+  async function fetchTodayCompletions() {
+    const today = getTodayString();
+    const startOfDay = `${today}T00:00:00`;
+    const endOfDay = `${today}T23:59:59`;
+    
+    const { data } = await supabase
+      .from('activity_completions')
+      .select('activity_id')
+      .eq('user_id', user!.id)
+      .gte('completed_at', startOfDay)
+      .lte('completed_at', endOfDay);
+    
+    const completedIds = new Set((data || []).map(c => c.activity_id));
+    setTodayCompletions(completedIds);
   }
 
   function buildNestedActivities(flat: Activity[]): Activity[] {
@@ -173,26 +199,42 @@ export default function Activities() {
     setIsDialogOpen(true);
   }
 
-  async function toggleStatus(activity: Activity) {
-    const nextStatus = activity.status === 'done' ? 'todo' : 'done';
-    const { error } = await supabase
-      .from('activities')
-      .update({ status: nextStatus })
-      .eq('id', activity.id);
-
-    if (!error) {
-      // Record completion in history if marking as done
-      if (nextStatus === 'done') {
-        await supabase.from('activity_completions').insert({
-          user_id: user!.id,
-          activity_id: activity.id,
-        });
-        toast({ 
-          title: 'Selesai! ✓', 
-          description: `${activity.title} tercatat selesai`
-        });
-      }
-      fetchActivities();
+  // Toggle completion for today only
+  async function toggleTodayCompletion(activity: Activity) {
+    const isCompleted = todayCompletions.has(activity.id);
+    
+    if (isCompleted) {
+      // Remove today's completion
+      const today = getTodayString();
+      const startOfDay = `${today}T00:00:00`;
+      const endOfDay = `${today}T23:59:59`;
+      
+      await supabase
+        .from('activity_completions')
+        .delete()
+        .eq('user_id', user!.id)
+        .eq('activity_id', activity.id)
+        .gte('completed_at', startOfDay)
+        .lte('completed_at', endOfDay);
+      
+      setTodayCompletions(prev => {
+        const next = new Set(prev);
+        next.delete(activity.id);
+        return next;
+      });
+    } else {
+      // Add completion for today
+      await supabase.from('activity_completions').insert({
+        user_id: user!.id,
+        activity_id: activity.id,
+      });
+      
+      setTodayCompletions(prev => new Set([...prev, activity.id]));
+      
+      toast({ 
+        title: 'Selesai! ✓', 
+        description: `${activity.title} tercatat selesai hari ini`
+      });
     }
   }
 
@@ -216,63 +258,63 @@ export default function Activities() {
     });
   }
 
-  function getStatusBadge(status: string) {
-    switch (status) {
-      case 'done':
-        return <Badge className="bg-neon-green/20 text-neon-green border-neon-green/50">Selesai</Badge>;
-      case 'in_progress':
-        return <Badge className="bg-accent/20 text-accent border-accent/50">Dikerjakan</Badge>;
-      default:
-        return <Badge variant="outline">To Do</Badge>;
+  function getStatusBadge(isCompletedToday: boolean) {
+    if (isCompletedToday) {
+      return <Badge className="bg-neon-green/20 text-neon-green border-neon-green/50 shrink-0">Selesai</Badge>;
     }
+    return null;
   }
 
   function ActivityItem({ activity, depth = 0 }: { activity: Activity; depth?: number }) {
     const hasChildren = activity.children && activity.children.length > 0;
     const isExpanded = expandedIds.has(activity.id);
     const category = categories.find((c) => c.id === activity.category_id);
+    const isCompletedToday = todayCompletions.has(activity.id);
 
     return (
       <div className="space-y-1">
         <div
-          className={`flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors group ${
-            activity.status === 'done' ? 'opacity-60' : ''
+          className={`flex items-center gap-2 p-3 rounded-lg hover:bg-muted/50 transition-colors group ${
+            isCompletedToday ? 'opacity-70' : ''
           }`}
           style={{ paddingLeft: `${depth * 24 + 12}px` }}
         >
-          {hasChildren ? (
-            <button
-              onClick={() => toggleExpand(activity.id)}
-              className="p-1 hover:bg-muted rounded"
-            >
-              {isExpanded ? (
-                <ChevronDown className="h-4 w-4" />
-              ) : (
-                <ChevronRight className="h-4 w-4" />
-              )}
-            </button>
-          ) : (
-            <div className="w-6" />
-          )}
+          {/* Expand/collapse button */}
+          <div className="w-6 shrink-0">
+            {hasChildren && (
+              <button
+                onClick={() => toggleExpand(activity.id)}
+                className="p-1 hover:bg-muted rounded"
+              >
+                {isExpanded ? (
+                  <ChevronDown className="h-4 w-4" />
+                ) : (
+                  <ChevronRight className="h-4 w-4" />
+                )}
+              </button>
+            )}
+          </div>
 
+          {/* Checkbox */}
           <Checkbox
-            checked={activity.status === 'done'}
-            onCheckedChange={() => toggleStatus(activity)}
-            className="data-[state=checked]:bg-neon-green data-[state=checked]:border-neon-green"
+            checked={isCompletedToday}
+            onCheckedChange={() => toggleTodayCompletion(activity)}
+            className="shrink-0 data-[state=checked]:bg-neon-green data-[state=checked]:border-neon-green"
           />
 
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <span
-                className={`font-medium ${
-                  activity.status === 'done' ? 'line-through text-muted-foreground' : ''
-                }`}
-              >
-                {activity.title}
-              </span>
+          {/* Title and details */}
+          <div className="flex-1 min-w-0 mr-2">
+            <span
+              className={`font-medium block truncate ${
+                isCompletedToday ? 'line-through text-muted-foreground' : ''
+              }`}
+            >
+              {activity.title}
+            </span>
+            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
               {category && (
                 <span
-                  className="text-xs px-2 py-0.5 rounded-full"
+                  className="text-xs px-2 py-0.5 rounded-full shrink-0"
                   style={{
                     backgroundColor: `${category.color}20`,
                     color: category.color,
@@ -281,22 +323,23 @@ export default function Activities() {
                   {category.name}
                 </span>
               )}
+              {(activity.scheduled_date || activity.scheduled_time) && (
+                <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Clock className="h-3 w-3" />
+                  {activity.scheduled_date} {activity.scheduled_time}
+                </span>
+              )}
             </div>
-            {(activity.scheduled_date || activity.scheduled_time) && (
-              <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
-                <Clock className="h-3 w-3" />
-                {activity.scheduled_date} {activity.scheduled_time}
-              </div>
-            )}
           </div>
 
-          {getStatusBadge(activity.status)}
+          {/* Status badge */}
+          {getStatusBadge(isCompletedToday)}
 
           {/* Add Sub-Activity Button */}
           <Button
             variant="ghost"
             size="icon"
-            className="opacity-0 group-hover:opacity-100 text-primary hover:text-primary hover:bg-primary/10"
+            className="shrink-0 opacity-0 group-hover:opacity-100 text-primary hover:text-primary hover:bg-primary/10"
             onClick={() => openAddSubActivity(activity.id, activity.title)}
             title="Tambah sub-aktivitas"
           >
@@ -305,7 +348,7 @@ export default function Activities() {
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100">
+              <Button variant="ghost" size="icon" className="shrink-0 opacity-0 group-hover:opacity-100">
                 <MoreHorizontal className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
