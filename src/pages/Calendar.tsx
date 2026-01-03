@@ -5,11 +5,14 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from '@/components/ui/dialog';
 import { 
   ChevronLeft, 
@@ -17,7 +20,10 @@ import {
   Calendar as CalendarIcon,
   Check,
   Clock,
-  Loader2 
+  Loader2,
+  Circle,
+  Edit2,
+  Trash2
 } from 'lucide-react';
 import { 
   format, 
@@ -40,6 +46,7 @@ import {
 } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 type ViewMode = 'day' | 'week' | 'month' | 'year';
 
@@ -68,9 +75,19 @@ export default function Calendar() {
   const [completions, setCompletions] = useState<Completion[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // Popup state
+  // Detail popup state
   const [selectedActivity, setSelectedActivity] = useState<CompletionDetail | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+  
+  // Complete activity dialog state
+  const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
+  const [activityToComplete, setActivityToComplete] = useState<{ activity: Activity; date: Date } | null>(null);
+  const [completeTime, setCompleteTime] = useState("12:00");
+  
+  // Edit completion dialog state
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [completionToEdit, setCompletionToEdit] = useState<{ completion: Completion; activity: Activity } | null>(null);
+  const [editTime, setEditTime] = useState("12:00");
 
   useEffect(() => {
     if (user) {
@@ -162,70 +179,199 @@ export default function Calendar() {
     return activity.title;
   }
 
+  function getUncompletedActivitiesForDate(date: Date): Activity[] {
+    const dateCompletions = getCompletionsForDate(date);
+    const completedActivityIds = new Set(dateCompletions.map(c => c.activity_id));
+    return activities.filter(a => !completedActivityIds.has(a.id));
+  }
+
   function openDetail(detail: CompletionDetail) {
     setSelectedActivity(detail);
     setIsDetailOpen(true);
   }
 
+  function openCompleteDialog(activity: Activity, date: Date) {
+    setActivityToComplete({ activity, date });
+    setCompleteTime(format(new Date(), 'HH:mm'));
+    setCompleteDialogOpen(true);
+  }
+
+  async function handleCompleteActivity() {
+    if (!activityToComplete || !user) return;
+
+    try {
+      const completedAt = new Date(activityToComplete.date);
+      const [hours, minutes] = completeTime.split(':').map(Number);
+      completedAt.setHours(hours, minutes, 0, 0);
+
+      const { error } = await supabase
+        .from('activity_completions')
+        .insert({
+          activity_id: activityToComplete.activity.id,
+          user_id: user.id,
+          completed_at: completedAt.toISOString()
+        });
+
+      if (error) throw error;
+
+      toast.success('Aktivitas berhasil diselesaikan');
+      setCompleteDialogOpen(false);
+      fetchData();
+    } catch (error) {
+      console.error('Error completing activity:', error);
+      toast.error('Gagal menyelesaikan aktivitas');
+    }
+  }
+
+  function openEditDialog(completion: Completion, activity: Activity) {
+    setCompletionToEdit({ completion, activity });
+    const completedDate = new Date(completion.completed_at);
+    setEditTime(format(completedDate, 'HH:mm'));
+    setEditDialogOpen(true);
+  }
+
+  async function handleUpdateCompletion() {
+    if (!completionToEdit) return;
+
+    try {
+      const completedAt = new Date(completionToEdit.completion.completed_at);
+      const [hours, minutes] = editTime.split(':').map(Number);
+      completedAt.setHours(hours, minutes, 0, 0);
+
+      const { error } = await supabase
+        .from('activity_completions')
+        .update({
+          completed_at: completedAt.toISOString()
+        })
+        .eq('id', completionToEdit.completion.id);
+
+      if (error) throw error;
+
+      toast.success('Waktu berhasil diperbarui');
+      setEditDialogOpen(false);
+      fetchData();
+    } catch (error) {
+      console.error('Error updating completion:', error);
+      toast.error('Gagal memperbarui waktu');
+    }
+  }
+
+  async function handleDeleteCompletion() {
+    if (!completionToEdit) return;
+
+    try {
+      const { error } = await supabase
+        .from('activity_completions')
+        .delete()
+        .eq('id', completionToEdit.completion.id);
+
+      if (error) throw error;
+
+      toast.success('Penyelesaian berhasil dihapus');
+      setEditDialogOpen(false);
+      fetchData();
+    } catch (error) {
+      console.error('Error deleting completion:', error);
+      toast.error('Gagal menghapus penyelesaian');
+    }
+  }
+
   function renderDayView() {
     const completedDetails = getCompletedActivitiesForDate(currentDate);
-    
-    // Get all activities to show (both main and sub)
-    const allActivitiesToShow = activities;
+    const uncompletedActivities = getUncompletedActivitiesForDate(currentDate);
     
     return (
-      <div className="space-y-4">
+      <div className="space-y-6">
         <h2 className="text-xl font-semibold text-center">
           {format(currentDate, 'EEEE, d MMMM yyyy', { locale: localeId })}
         </h2>
         
-        <div className="grid gap-3">
-          {allActivitiesToShow.map(activity => {
-            const detail = completedDetails.find(d => d.activity.id === activity.id);
-            const isCompleted = !!detail;
-            const isSubActivity = !!activity.parent_id;
-            
-            return (
-              <div 
-                key={activity.id}
-                onClick={() => detail && openDetail(detail)}
-                className={cn(
-                  "flex items-center justify-between p-4 rounded-lg border transition-colors",
-                  isCompleted 
-                    ? "bg-neon-green/10 border-neon-green/30 cursor-pointer hover:bg-neon-green/20" 
-                    : "bg-muted/30 border-border",
-                  isSubActivity && "ml-6"
-                )}
-              >
-                <div className="flex items-center gap-2">
-                  {isSubActivity && (
-                    <span className="text-muted-foreground text-sm">↳</span>
+        {/* Completed Activities */}
+        {completedDetails.length > 0 && (
+          <div className="space-y-3">
+            <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+              <Check className="h-4 w-4 text-neon-green" />
+              Selesai ({completedDetails.length})
+            </h3>
+            {completedDetails.map(detail => {
+              const isSubActivity = !!detail.activity.parent_id;
+              
+              return (
+                <div 
+                  key={detail.activity.id}
+                  className={cn(
+                    "flex items-center justify-between p-4 rounded-lg border bg-neon-green/10 border-neon-green/30",
+                    isSubActivity && "ml-6"
                   )}
-                  <span className={isCompleted ? "text-neon-green" : "text-muted-foreground"}>
-                    {activity.title}
-                  </span>
-                  {isSubActivity && (
-                    <Badge variant="outline" className="text-xs">sub</Badge>
-                  )}
-                </div>
-                {isCompleted && (
-                  <div className="flex items-center gap-2">
+                >
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    {isSubActivity && (
+                      <span className="text-muted-foreground text-sm shrink-0">↳</span>
+                    )}
+                    <span className="text-neon-green truncate">{detail.activity.title}</span>
+                    {isSubActivity && (
+                      <Badge variant="outline" className="text-xs shrink-0">sub</Badge>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
                     <span className="text-xs text-muted-foreground">
                       {format(new Date(detail.completions[0].completed_at), 'HH:mm')}
                     </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => openEditDialog(detail.completions[0], detail.activity)}
+                    >
+                      <Edit2 className="h-4 w-4" />
+                    </Button>
                     <Check className="h-5 w-5 text-neon-green" />
                   </div>
-                )}
-              </div>
-            );
-          })}
-          
-          {activities.length === 0 && (
-            <p className="text-center text-muted-foreground py-8">
-              Belum ada aktivitas
-            </p>
-          )}
-        </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Uncompleted Activities */}
+        {uncompletedActivities.length > 0 && (
+          <div className="space-y-3">
+            <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+              <Circle className="h-4 w-4" />
+              Belum Selesai ({uncompletedActivities.length})
+            </h3>
+            {uncompletedActivities.map(activity => {
+              const isSubActivity = !!activity.parent_id;
+              
+              return (
+                <div 
+                  key={activity.id}
+                  onClick={() => openCompleteDialog(activity, currentDate)}
+                  className={cn(
+                    "flex items-center justify-between p-4 rounded-lg border bg-muted/30 border-border cursor-pointer hover:bg-muted/50 transition-colors",
+                    isSubActivity && "ml-6"
+                  )}
+                >
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    {isSubActivity && (
+                      <span className="text-muted-foreground text-sm shrink-0">↳</span>
+                    )}
+                    <span className="text-muted-foreground truncate">{activity.title}</span>
+                    {isSubActivity && (
+                      <Badge variant="outline" className="text-xs shrink-0">sub</Badge>
+                    )}
+                  </div>
+                  <span className="text-xs text-muted-foreground shrink-0">Klik untuk selesaikan</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        
+        {activities.length === 0 && (
+          <p className="text-center text-muted-foreground py-8">
+            Belum ada aktivitas
+          </p>
+        )}
       </div>
     );
   }
@@ -509,14 +655,118 @@ export default function Calendar() {
                         {format(new Date(comp.completed_at), 'EEEE, d MMMM yyyy', { locale: localeId })}
                       </span>
                     </div>
-                    <span className="font-mono text-primary">
-                      {format(new Date(comp.completed_at), 'HH:mm:ss')}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-primary">
+                        {format(new Date(comp.completed_at), 'HH:mm:ss')}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setIsDetailOpen(false);
+                          openEditDialog(comp, selectedActivity.activity);
+                        }}
+                      >
+                        <Edit2 className="h-3 w-3" />
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Complete Activity Dialog */}
+      <Dialog open={completeDialogOpen} onOpenChange={setCompleteDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Selesaikan Aktivitas</DialogTitle>
+          </DialogHeader>
+          
+          {activityToComplete && (
+            <div className="space-y-4">
+              <div className="p-4 rounded-lg bg-muted/50 border">
+                <Label className="text-muted-foreground text-xs">Aktivitas</Label>
+                <p className="font-medium">{getActivityLabel(activityToComplete.activity)}</p>
+              </div>
+              
+              <div className="p-4 rounded-lg bg-muted/50 border">
+                <Label className="text-muted-foreground text-xs">Tanggal</Label>
+                <p>{format(activityToComplete.date, 'EEEE, d MMMM yyyy', { locale: localeId })}</p>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="complete-time">Pukul berapa diselesaikan?</Label>
+                <Input
+                  id="complete-time"
+                  type="time"
+                  value={completeTime}
+                  onChange={(e) => setCompleteTime(e.target.value)}
+                />
+              </div>
+            </div>
+          )}
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCompleteDialogOpen(false)}>
+              Batal
+            </Button>
+            <Button onClick={handleCompleteActivity} className="gradient-primary">
+              Selesaikan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Completion Dialog */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Penyelesaian</DialogTitle>
+          </DialogHeader>
+          
+          {completionToEdit && (
+            <div className="space-y-4">
+              <div className="p-4 rounded-lg bg-muted/50 border">
+                <Label className="text-muted-foreground text-xs">Aktivitas</Label>
+                <p className="font-medium">{getActivityLabel(completionToEdit.activity)}</p>
+              </div>
+              
+              <div className="p-4 rounded-lg bg-muted/50 border">
+                <Label className="text-muted-foreground text-xs">Tanggal</Label>
+                <p>{format(new Date(completionToEdit.completion.completed_at), 'EEEE, d MMMM yyyy', { locale: localeId })}</p>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="edit-time">Ubah waktu penyelesaian</Label>
+                <Input
+                  id="edit-time"
+                  type="time"
+                  value={editTime}
+                  onChange={(e) => setEditTime(e.target.value)}
+                />
+              </div>
+            </div>
+          )}
+          
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button 
+              variant="destructive" 
+              onClick={handleDeleteCompletion}
+              className="sm:mr-auto"
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Hapus
+            </Button>
+            <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
+              Batal
+            </Button>
+            <Button onClick={handleUpdateCompletion} className="gradient-primary">
+              Simpan
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </AppLayout>
