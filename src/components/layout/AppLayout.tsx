@@ -7,7 +7,7 @@ interface AppLayoutProps {
 
 export function AppLayout({ children }: AppLayoutProps) {
   return (
-    <div className="dark min-h-screen bg-background">
+    <div className="min-h-screen bg-background">
       <Sidebar />
       {/* Mobile: add top padding for header. Desktop: add left padding for sidebar */}
       <main className="pt-14 md:pt-0 md:pl-64 min-h-screen transition-all duration-300">
