@@ -22,10 +22,15 @@ function ThemeInitializer() {
     const theme = localStorage.getItem('theme');
     const themeHue = localStorage.getItem('themeHue');
     
+    // Apply theme - explicitly handle both cases
     if (theme === 'light') {
       document.documentElement.classList.remove('dark');
-    } else {
+    } else if (theme === 'dark') {
       document.documentElement.classList.add('dark');
+    } else {
+      // Default to dark if no preference saved
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
     }
     
     if (themeHue) {
