@@ -74,19 +74,25 @@ export default function Auth() {
     setIsLoading(false);
 
     if (error) {
+      let errorMessage = error.message;
+      
+      // Handle common error messages
       if (error.message.includes('already registered')) {
-        toast({
-          title: 'Email Sudah Terdaftar',
-          description: 'Silakan login dengan email ini atau gunakan email lain.',
-          variant: 'destructive',
-        });
-      } else {
-        toast({
-          title: 'Registrasi Gagal',
-          description: error.message,
-          variant: 'destructive',
-        });
+        errorMessage = 'Email ini sudah terdaftar. Silakan login atau gunakan email lain.';
+      } else if (error.message.includes('Email not confirmed')) {
+        errorMessage = 'Silakan konfirmasi email kamu terlebih dahulu.';
+      } else if (error.message.includes('Signups not allowed')) {
+        errorMessage = 'Pendaftaran sementara tidak tersedia.';
+      } else if (error.message.includes('over_email_send_rate_limit')) {
+        errorMessage = 'Terlalu banyak percobaan. Silakan tunggu beberapa menit.';
       }
+      
+      toast({
+        title: 'Registrasi Gagal',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+      console.error('Signup error:', error);
     } else {
       toast({
         title: 'Registrasi Berhasil! 🎉',
