@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
+import { useUserRole } from '@/hooks/useUserRole';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
@@ -30,6 +31,7 @@ import {
   Wallet,
   StickyNote,
   BookOpen,
+  Shield,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
@@ -55,11 +57,16 @@ const settingsItems = [
   { icon: Settings, label: 'Pengaturan', href: '/settings' },
 ];
 
+const adminItems = [
+  { icon: Shield, label: 'Admin Panel', href: '/admin' },
+];
+
 export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
   const { user, signOut } = useAuth();
+  const { isAdmin } = useUserRole();
 
   // Close mobile menu on route change
   useEffect(() => {
@@ -214,6 +221,39 @@ export function Sidebar() {
             );
           })}
         </div>
+
+        {/* Admin Section - Only visible to admins */}
+        {isAdmin && (
+          <>
+            <Separator className="my-3" />
+            {(isMobile || !collapsed) && (
+              <p className="px-3 py-1.5 text-xs font-semibold text-amber-500 uppercase tracking-wider">
+                Admin
+              </p>
+            )}
+            <div className="space-y-1">
+              {adminItems.map((item) => {
+                const isActive = location.pathname === item.href;
+                return (
+                  <Link
+                    key={item.href}
+                    to={item.href}
+                    onClick={() => isMobile && setMobileOpen(false)}
+                    className={cn(
+                      'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all',
+                      isActive
+                        ? 'bg-amber-500/10 text-amber-500'
+                        : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                    )}
+                  >
+                    <item.icon className={cn('h-5 w-5 flex-shrink-0', isActive && 'text-amber-500')} />
+                    {(isMobile || !collapsed) && <span>{item.label}</span>}
+                  </Link>
+                );
+              })}
+            </div>
+          </>
+        )}
       </nav>
 
       {/* User section */}
