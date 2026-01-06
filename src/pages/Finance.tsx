@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -10,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { 
   Plus, 
@@ -24,9 +26,12 @@ import {
   Download,
   MessageCircle,
   Tag,
-  Phone
+  Phone,
+  RefreshCw,
+  Play,
+  Pause
 } from "lucide-react";
-import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfDay, endOfDay, parseISO } from "date-fns";
+import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfDay, endOfDay, parseISO, addDays, addWeeks, addMonths, addYears } from "date-fns";
 import { id } from "date-fns/locale";
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from "recharts";
 import * as XLSX from "xlsx";
@@ -57,6 +62,20 @@ interface Budget {
   category?: TransactionCategory;
 }
 
+interface RecurringTransaction {
+  id: string;
+  category_id: string | null;
+  amount: number;
+  type: "income" | "expense";
+  description: string | null;
+  frequency: "daily" | "weekly" | "monthly" | "yearly";
+  day_of_month: number | null;
+  day_of_week: number | null;
+  is_active: boolean;
+  next_due_date: string;
+  category?: TransactionCategory;
+}
+
 type StatPeriod = "daily" | "weekly" | "monthly";
 
 const DEFAULT_CATEGORIES: Omit<TransactionCategory, "id">[] = [
@@ -82,14 +101,17 @@ export default function Finance() {
   const [categories, setCategories] = useState<TransactionCategory[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
+  const [recurringTransactions, setRecurringTransactions] = useState<RecurringTransaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
   const [showAddTransaction, setShowAddTransaction] = useState(false);
   const [showAddBudget, setShowAddBudget] = useState(false);
   const [showAddCategory, setShowAddCategory] = useState(false);
   const [showExportDialog, setShowExportDialog] = useState(false);
+  const [showAddRecurring, setShowAddRecurring] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [editingCategory, setEditingCategory] = useState<TransactionCategory | null>(null);
+  const [editingRecurring, setEditingRecurring] = useState<RecurringTransaction | null>(null);
   
   const [newTransaction, setNewTransaction] = useState({
     type: "expense" as "income" | "expense",
@@ -109,6 +131,16 @@ export default function Finance() {
     name: "",
     type: "expense" as "income" | "expense",
     color: "#6366f1",
+  });
+
+  const [newRecurring, setNewRecurring] = useState({
+    type: "expense" as "income" | "expense",
+    amount: "",
+    category_id: "",
+    description: "",
+    frequency: "monthly" as "daily" | "weekly" | "monthly" | "yearly",
+    day_of_month: 1,
+    day_of_week: 1,
   });
 
   const [exportWhatsappNumber, setExportWhatsappNumber] = useState("");
@@ -182,6 +214,22 @@ export default function Finance() {
         category: cats?.find((c) => c.id === b.category_id),
       }));
       setBudgets(budgetsWithCat as Budget[]);
+
+      // Fetch recurring transactions
+      const { data: recurringData, error: recurringError } = await supabase
+        .from("recurring_transactions")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
+
+      if (recurringError) throw recurringError;
+
+      const recurringWithCat = (recurringData || []).map((r) => ({
+        ...r,
+        amount: Number(r.amount),
+        category: cats?.find((c) => c.id === r.category_id),
+      }));
+      setRecurringTransactions(recurringWithCat as RecurringTransaction[]);
     } catch (error: any) {
       toast({
         title: "Error",
@@ -542,6 +590,240 @@ export default function Finance() {
     setShowExportDialog(false);
     toast({ title: "Membuka WhatsApp..." });
   };
+
+  // Recurring transaction handlers
+  const handleAddRecurring = async () => {
+    if (!user || !newRecurring.amount || !newRecurring.category_id) {
+      toast({
+        title: "Error",
+        description: "Mohon lengkapi semua field",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const nextDue = calculateNextDueDate(newRecurring.frequency, newRecurring.day_of_month, newRecurring.day_of_week);
+      
+      const { error } = await supabase.from("recurring_transactions").insert({
+        user_id: user.id,
+        type: newRecurring.type,
+        amount: parseFloat(newRecurring.amount),
+        category_id: newRecurring.category_id,
+        description: newRecurring.description || null,
+        frequency: newRecurring.frequency,
+        day_of_month: newRecurring.frequency === "monthly" || newRecurring.frequency === "yearly" ? newRecurring.day_of_month : null,
+        day_of_week: newRecurring.frequency === "weekly" ? newRecurring.day_of_week : null,
+        next_due_date: format(nextDue, "yyyy-MM-dd"),
+        is_active: true,
+      });
+
+      if (error) throw error;
+
+      toast({ title: "Transaksi berulang berhasil ditambahkan" });
+      setShowAddRecurring(false);
+      resetRecurringForm();
+      fetchData();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleUpdateRecurring = async () => {
+    if (!editingRecurring) return;
+
+    try {
+      const nextDue = calculateNextDueDate(newRecurring.frequency, newRecurring.day_of_month, newRecurring.day_of_week);
+      
+      const { error } = await supabase
+        .from("recurring_transactions")
+        .update({
+          type: newRecurring.type,
+          amount: parseFloat(newRecurring.amount),
+          category_id: newRecurring.category_id,
+          description: newRecurring.description || null,
+          frequency: newRecurring.frequency,
+          day_of_month: newRecurring.frequency === "monthly" || newRecurring.frequency === "yearly" ? newRecurring.day_of_month : null,
+          day_of_week: newRecurring.frequency === "weekly" ? newRecurring.day_of_week : null,
+          next_due_date: format(nextDue, "yyyy-MM-dd"),
+        })
+        .eq("id", editingRecurring.id);
+
+      if (error) throw error;
+
+      toast({ title: "Transaksi berulang berhasil diperbarui" });
+      setEditingRecurring(null);
+      setShowAddRecurring(false);
+      resetRecurringForm();
+      fetchData();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleToggleRecurringActive = async (recurring: RecurringTransaction) => {
+    try {
+      const { error } = await supabase
+        .from("recurring_transactions")
+        .update({ is_active: !recurring.is_active })
+        .eq("id", recurring.id);
+
+      if (error) throw error;
+
+      toast({ 
+        title: recurring.is_active ? "Transaksi berulang dinonaktifkan" : "Transaksi berulang diaktifkan" 
+      });
+      fetchData();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDeleteRecurring = async (id: string) => {
+    try {
+      const { error } = await supabase.from("recurring_transactions").delete().eq("id", id);
+      if (error) throw error;
+      toast({ title: "Transaksi berulang dihapus" });
+      fetchData();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleProcessRecurring = async (recurring: RecurringTransaction) => {
+    if (!user) return;
+
+    try {
+      // Create actual transaction
+      const { error: transError } = await supabase.from("transactions").insert({
+        user_id: user.id,
+        type: recurring.type,
+        amount: recurring.amount,
+        category_id: recurring.category_id,
+        description: `[Berulang] ${recurring.description || recurring.category?.name}`,
+        transaction_date: format(new Date(), "yyyy-MM-dd"),
+      });
+
+      if (transError) throw transError;
+
+      // Update next due date
+      const nextDue = calculateNextDueFromCurrent(
+        parseISO(recurring.next_due_date), 
+        recurring.frequency,
+        recurring.day_of_month,
+        recurring.day_of_week
+      );
+
+      const { error: updateError } = await supabase
+        .from("recurring_transactions")
+        .update({ 
+          next_due_date: format(nextDue, "yyyy-MM-dd"),
+          last_processed_date: format(new Date(), "yyyy-MM-dd")
+        })
+        .eq("id", recurring.id);
+
+      if (updateError) throw updateError;
+
+      toast({ title: "Transaksi berhasil diproses" });
+      fetchData();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const openEditRecurring = (r: RecurringTransaction) => {
+    setEditingRecurring(r);
+    setNewRecurring({
+      type: r.type,
+      amount: r.amount.toString(),
+      category_id: r.category_id || "",
+      description: r.description || "",
+      frequency: r.frequency,
+      day_of_month: r.day_of_month || 1,
+      day_of_week: r.day_of_week || 1,
+    });
+    setShowAddRecurring(true);
+  };
+
+  const resetRecurringForm = () => {
+    setNewRecurring({
+      type: "expense",
+      amount: "",
+      category_id: "",
+      description: "",
+      frequency: "monthly",
+      day_of_month: 1,
+      day_of_week: 1,
+    });
+  };
+
+  const calculateNextDueDate = (
+    frequency: "daily" | "weekly" | "monthly" | "yearly",
+    dayOfMonth: number,
+    dayOfWeek: number
+  ) => {
+    const now = new Date();
+    switch (frequency) {
+      case "daily":
+        return addDays(now, 1);
+      case "weekly":
+        const daysUntilNext = (dayOfWeek - now.getDay() + 7) % 7 || 7;
+        return addDays(now, daysUntilNext);
+      case "monthly":
+        const nextMonth = now.getDate() > dayOfMonth ? addMonths(now, 1) : now;
+        return new Date(nextMonth.getFullYear(), nextMonth.getMonth(), Math.min(dayOfMonth, 28));
+      case "yearly":
+        return addYears(now, 1);
+    }
+  };
+
+  const calculateNextDueFromCurrent = (
+    current: Date,
+    frequency: "daily" | "weekly" | "monthly" | "yearly",
+    dayOfMonth: number | null,
+    dayOfWeek: number | null
+  ) => {
+    switch (frequency) {
+      case "daily":
+        return addDays(current, 1);
+      case "weekly":
+        return addWeeks(current, 1);
+      case "monthly":
+        return addMonths(current, 1);
+      case "yearly":
+        return addYears(current, 1);
+    }
+  };
+
+  const frequencyLabel = {
+    daily: "Harian",
+    weekly: "Mingguan",
+    monthly: "Bulanan",
+    yearly: "Tahunan",
+  };
+
+  const dayOfWeekLabel = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
+
   const getDateRange = (period: StatPeriod) => {
     const now = new Date();
     switch (period) {
@@ -627,17 +909,23 @@ export default function Finance() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-      </div>
+      <AppLayout>
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        </div>
+      </AppLayout>
     );
   }
 
   return (
-    <div className="container mx-auto p-4 space-y-6 max-w-6xl">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <h1 className="text-2xl font-bold">Keuangan</h1>
-        <div className="flex gap-2 flex-wrap">
+    <AppLayout>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h1 className="text-2xl font-bold">Keuangan</h1>
+            <p className="text-muted-foreground">Kelola pemasukan dan pengeluaranmu</p>
+          </div>
+          <div className="flex gap-2 flex-wrap">
           <Dialog open={showAddBudget} onOpenChange={setShowAddBudget}>
             <DialogTrigger asChild>
               <Button variant="outline" size="sm">
@@ -923,6 +1211,146 @@ export default function Finance() {
               </div>
             </DialogContent>
           </Dialog>
+
+          {/* Recurring Transaction Dialog */}
+          <Dialog open={showAddRecurring} onOpenChange={(open) => {
+            setShowAddRecurring(open);
+            if (!open) {
+              setEditingRecurring(null);
+              resetRecurringForm();
+            }
+          }}>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm">
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Berulang
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>
+                  {editingRecurring ? "Edit Transaksi Berulang" : "Tambah Transaksi Berulang"}
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label>Tipe</Label>
+                  <Select
+                    value={newRecurring.type}
+                    onValueChange={(v: "income" | "expense") => {
+                      setNewRecurring({ ...newRecurring, type: v, category_id: "" });
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="income">Pemasukan</SelectItem>
+                      <SelectItem value="expense">Pengeluaran</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Kategori</Label>
+                  <Select
+                    value={newRecurring.category_id}
+                    onValueChange={(v) => setNewRecurring({ ...newRecurring, category_id: v })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Pilih kategori" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories
+                        .filter((c) => c.type === newRecurring.type)
+                        .map((cat) => (
+                          <SelectItem key={cat.id} value={cat.id}>
+                            {cat.name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Jumlah</Label>
+                  <Input
+                    type="number"
+                    placeholder="50000"
+                    value={newRecurring.amount}
+                    onChange={(e) => setNewRecurring({ ...newRecurring, amount: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label>Frekuensi</Label>
+                  <Select
+                    value={newRecurring.frequency}
+                    onValueChange={(v: "daily" | "weekly" | "monthly" | "yearly") => {
+                      setNewRecurring({ ...newRecurring, frequency: v });
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="daily">Harian</SelectItem>
+                      <SelectItem value="weekly">Mingguan</SelectItem>
+                      <SelectItem value="monthly">Bulanan</SelectItem>
+                      <SelectItem value="yearly">Tahunan</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {newRecurring.frequency === "weekly" && (
+                  <div>
+                    <Label>Hari</Label>
+                    <Select
+                      value={newRecurring.day_of_week.toString()}
+                      onValueChange={(v) => setNewRecurring({ ...newRecurring, day_of_week: parseInt(v) })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {dayOfWeekLabel.map((day, i) => (
+                          <SelectItem key={i} value={i.toString()}>{day}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                {(newRecurring.frequency === "monthly" || newRecurring.frequency === "yearly") && (
+                  <div>
+                    <Label>Tanggal</Label>
+                    <Select
+                      value={newRecurring.day_of_month.toString()}
+                      onValueChange={(v) => setNewRecurring({ ...newRecurring, day_of_month: parseInt(v) })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Array.from({ length: 28 }, (_, i) => (
+                          <SelectItem key={i + 1} value={(i + 1).toString()}>{i + 1}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                <div>
+                  <Label>Deskripsi (opsional)</Label>
+                  <Input
+                    placeholder="Catatan transaksi"
+                    value={newRecurring.description}
+                    onChange={(e) => setNewRecurring({ ...newRecurring, description: e.target.value })}
+                  />
+                </div>
+                <Button
+                  onClick={editingRecurring ? handleUpdateRecurring : handleAddRecurring}
+                  className="w-full"
+                >
+                  {editingRecurring ? "Simpan Perubahan" : "Tambah Transaksi Berulang"}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
@@ -984,8 +1412,9 @@ export default function Finance() {
       </div>
 
       <Tabs defaultValue="transactions" className="space-y-4">
-        <TabsList>
+        <TabsList className="flex-wrap">
           <TabsTrigger value="transactions">Transaksi</TabsTrigger>
+          <TabsTrigger value="recurring">Berulang</TabsTrigger>
           <TabsTrigger value="statistics">Statistik</TabsTrigger>
           <TabsTrigger value="budgets">Budget</TabsTrigger>
           <TabsTrigger value="categories">Kategori</TabsTrigger>
@@ -1041,6 +1470,96 @@ export default function Finance() {
                       >
                         <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="recurring" className="space-y-4">
+          {recurringTransactions.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center text-muted-foreground">
+                <RefreshCw className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>Belum ada transaksi berulang</p>
+                <p className="text-sm">Klik tombol "Berulang" untuk menambahkan</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {recurringTransactions.map((r) => (
+                <Card key={r.id} className={!r.is_active ? "opacity-60" : ""}>
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="w-3 h-3 rounded-full"
+                          style={{ backgroundColor: r.category?.color || "#6b7280" }}
+                        />
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium">{r.category?.name || "Tidak berkategori"}</p>
+                            <Badge variant={r.is_active ? "default" : "secondary"} className="text-xs">
+                              {r.is_active ? "Aktif" : "Nonaktif"}
+                            </Badge>
+                          </div>
+                          {r.description && (
+                            <p className="text-sm text-muted-foreground">{r.description}</p>
+                          )}
+                          <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                            <Badge variant="outline">{frequencyLabel[r.frequency]}</Badge>
+                            {r.frequency === "weekly" && r.day_of_week !== null && (
+                              <span>Setiap {dayOfWeekLabel[r.day_of_week]}</span>
+                            )}
+                            {(r.frequency === "monthly" || r.frequency === "yearly") && r.day_of_month !== null && (
+                              <span>Tanggal {r.day_of_month}</span>
+                            )}
+                            <span>• Selanjutnya: {format(parseISO(r.next_due_date), "dd MMM yyyy", { locale: id })}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`font-semibold ${
+                            r.type === "income" ? "text-green-600" : "text-red-600"
+                          }`}
+                        >
+                          {r.type === "income" ? "+" : "-"}
+                          {formatCurrency(r.amount)}
+                        </span>
+                        <div className="flex items-center gap-1">
+                          <Switch
+                            checked={r.is_active}
+                            onCheckedChange={() => handleToggleRecurringActive(r)}
+                            className="data-[state=checked]:bg-green-600"
+                          />
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleProcessRecurring(r)}
+                            title="Proses sekarang"
+                            disabled={!r.is_active}
+                          >
+                            <Play className="h-4 w-4 text-green-600" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => openEditRecurring(r)}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDeleteRecurring(r.id)}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -1280,5 +1799,6 @@ export default function Finance() {
         </TabsContent>
       </Tabs>
     </div>
+    </AppLayout>
   );
 }
