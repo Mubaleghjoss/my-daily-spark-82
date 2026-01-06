@@ -1450,7 +1450,20 @@ export default function Finance() {
       <Tabs defaultValue="transactions" className="space-y-4">
         <TabsList className="flex-wrap">
           <TabsTrigger value="transactions">Transaksi</TabsTrigger>
-          <TabsTrigger value="recurring">Berulang</TabsTrigger>
+          <TabsTrigger 
+            value="recurring"
+            onClick={(e) => {
+              if (!isPremium) {
+                e.preventDefault();
+                setPremiumFeatureName("Transaksi Berulang");
+                setShowPremiumDialog(true);
+              }
+            }}
+            className="relative"
+          >
+            Berulang
+            {!isPremium && <Crown className="h-3 w-3 ml-1 text-amber-500" />}
+          </TabsTrigger>
           <TabsTrigger value="statistics">Statistik</TabsTrigger>
           <TabsTrigger 
             value="budgets"
@@ -1528,7 +1541,25 @@ export default function Finance() {
         </TabsContent>
 
         <TabsContent value="recurring" className="space-y-4">
-          {recurringTransactions.length === 0 ? (
+          {!isPremium ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <Crown className="w-12 h-12 text-amber-500 mx-auto mb-4" />
+                <h3 className="text-lg font-semibold mb-2">Fitur Premium</h3>
+                <p className="text-muted-foreground mb-4">
+                  Kelola transaksi berulang otomatis dengan berlangganan premium
+                </p>
+                <Button 
+                  onClick={() => {
+                    setPremiumFeatureName("Transaksi Berulang");
+                    setShowPremiumDialog(true);
+                  }}
+                >
+                  Lihat Paket Berlangganan
+                </Button>
+              </CardContent>
+            </Card>
+          ) : recurringTransactions.length === 0 ? (
             <Card>
               <CardContent className="py-8 text-center text-muted-foreground">
                 <RefreshCw className="h-12 w-12 mx-auto mb-4 opacity-50" />

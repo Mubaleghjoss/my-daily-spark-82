@@ -7,11 +7,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { useSubscription } from '@/hooks/useSubscription';
+import { PremiumDialog } from '@/components/PremiumDialog';
 import { toast } from 'sonner';
-import { Plus, Search, Pencil, Trash2, BookOpen, MessageCircle, Filter, ExternalLink, Heart, Tag, X } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, BookOpen, MessageCircle, Filter, ExternalLink, Heart, Tag, X, Crown, Globe } from 'lucide-react';
 import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 
@@ -49,16 +51,22 @@ const defaultCategories = [
 
 export default function PrayersAdvices() {
   const { user } = useAuth();
+  const { isPremium, loading: subscriptionLoading } = useSubscription();
   const [items, setItems] = useState<PrayerAdvice[]>([]);
+  const [publicItems, setPublicItems] = useState<PrayerAdvice[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showCategoryDialog, setShowCategoryDialog] = useState(false);
+  const [showPremiumDialog, setShowPremiumDialog] = useState(false);
   const [editingItem, setEditingItem] = useState<PrayerAdvice | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<ItemType>('all');
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [filterFavorite, setFilterFavorite] = useState<FavoriteFilter>('all');
+  const [activeTab, setActiveTab] = useState<'my' | 'public'>('my');
+  const [publicSearchQuery, setPublicSearchQuery] = useState('');
+  const [publicFilterType, setPublicFilterType] = useState<ItemType>('all');
   const [newCategory, setNewCategory] = useState({ name: '', color: '#6366f1' });
   const [newItem, setNewItem] = useState({
     type: 'doa' as 'doa' | 'nasehat',
@@ -76,11 +84,18 @@ export default function PrayersAdvices() {
     }
   }, [user]);
 
+  useEffect(() => {
+    if (user && isPremium && activeTab === 'public') {
+      fetchPublicItems();
+    }
+  }, [user, isPremium, activeTab]);
+
   const fetchItems = async () => {
     try {
       const { data, error } = await supabase
         .from('prayers_advices')
         .select('*')
+        .eq('user_id', user?.id)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -90,6 +105,23 @@ export default function PrayersAdvices() {
       toast.error('Gagal memuat data');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchPublicItems = async () => {
+    if (!isPremium) return;
+    
+    try {
+      const { data, error } = await supabase
+        .from('prayers_advices')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setPublicItems((data || []) as PrayerAdvice[]);
+    } catch (error) {
+      console.error('Error fetching public items:', error);
+      toast.error('Gagal memuat data publik');
     }
   };
 
@@ -274,6 +306,18 @@ export default function PrayersAdvices() {
     const matchesFavorite = filterFavorite === 'all' || item.is_favorite;
     
     return matchesSearch && matchesType && matchesCategory && matchesFavorite;
+  });
+
+  const filteredPublicItems = publicItems.filter(item => {
+    const matchesSearch = 
+      item.title.toLowerCase().includes(publicSearchQuery.toLowerCase()) ||
+      item.content_indonesian.toLowerCase().includes(publicSearchQuery.toLowerCase()) ||
+      (item.content_arabic?.toLowerCase().includes(publicSearchQuery.toLowerCase())) ||
+      (item.source?.toLowerCase().includes(publicSearchQuery.toLowerCase()));
+    
+    const matchesType = publicFilterType === 'all' || item.type === publicFilterType;
+    
+    return matchesSearch && matchesType;
   });
 
   const getCategoryColor = (categoryName: string | null) => {
@@ -489,158 +533,301 @@ export default function PrayersAdvices() {
           </div>
         </div>
 
-        {/* Filters */}
-        <div className="space-y-3">
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Cari doa atau nasehat..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
-              />
+        {/* Main Tabs */}
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'my' | 'public')}>
+          <TabsList className="mb-4">
+            <TabsTrigger value="my">Koleksi Saya</TabsTrigger>
+            <TabsTrigger 
+              value="public"
+              onClick={(e) => {
+                if (!isPremium) {
+                  e.preventDefault();
+                  setShowPremiumDialog(true);
+                }
+              }}
+              className="relative"
+            >
+              <Globe className="w-4 h-4 mr-1" />
+              Publik
+              {!isPremium && <Crown className="h-3 w-3 ml-1 text-amber-500" />}
+            </TabsTrigger>
+          </TabsList>
+
+          {/* Koleksi Saya Tab */}
+          <TabsContent value="my" className="space-y-4">
+            {/* Filters */}
+            <div className="space-y-3">
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Cari doa atau nasehat..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+                <Select value={filterType} onValueChange={(value: ItemType) => setFilterType(value)}>
+                  <SelectTrigger className="w-full sm:w-[140px]">
+                    <Filter className="w-4 h-4 mr-2" />
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Semua</SelectItem>
+                    <SelectItem value="doa">Doa</SelectItem>
+                    <SelectItem value="nasehat">Nasehat</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={filterCategory} onValueChange={setFilterCategory}>
+                  <SelectTrigger className="w-full sm:w-[180px]">
+                    <Tag className="w-4 h-4 mr-2" />
+                    <SelectValue placeholder="Kategori" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Semua Kategori</SelectItem>
+                    {categories.map(cat => (
+                      <SelectItem key={cat.id} value={cat.name}>
+                        <div className="flex items-center gap-2">
+                          <div 
+                            className="w-3 h-3 rounded-full" 
+                            style={{ backgroundColor: cat.color }}
+                          />
+                          {cat.name}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <Tabs value={filterFavorite} onValueChange={(v) => setFilterFavorite(v as FavoriteFilter)}>
+                <TabsList>
+                  <TabsTrigger value="all">Semua</TabsTrigger>
+                  <TabsTrigger value="favorite" className="gap-1">
+                    <Heart className="w-3 h-3" />
+                    Favorit
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
             </div>
-            <Select value={filterType} onValueChange={(value: ItemType) => setFilterType(value)}>
-              <SelectTrigger className="w-full sm:w-[140px]">
-                <Filter className="w-4 h-4 mr-2" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Semua</SelectItem>
-                <SelectItem value="doa">Doa</SelectItem>
-                <SelectItem value="nasehat">Nasehat</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={filterCategory} onValueChange={setFilterCategory}>
-              <SelectTrigger className="w-full sm:w-[180px]">
-                <Tag className="w-4 h-4 mr-2" />
-                <SelectValue placeholder="Kategori" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Semua Kategori</SelectItem>
-                {categories.map(cat => (
-                  <SelectItem key={cat.id} value={cat.name}>
-                    <div className="flex items-center gap-2">
-                      <div 
-                        className="w-3 h-3 rounded-full" 
-                        style={{ backgroundColor: cat.color }}
-                      />
-                      {cat.name}
+
+            {/* Items Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredItems.map((item) => (
+                <Card key={item.id} className="hover:shadow-md transition-shadow">
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {item.type === 'doa' ? (
+                          <BookOpen className="w-4 h-4 text-primary flex-shrink-0" />
+                        ) : (
+                          <MessageCircle className="w-4 h-4 text-secondary flex-shrink-0" />
+                        )}
+                        <Badge variant={item.type === 'doa' ? 'default' : 'secondary'}>
+                          {item.type === 'doa' ? 'Doa' : 'Nasehat'}
+                        </Badge>
+                        {item.category && (
+                          <Badge 
+                            variant="outline" 
+                            style={{ borderColor: getCategoryColor(item.category), color: getCategoryColor(item.category) }}
+                          >
+                            {item.category}
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="flex gap-1 flex-shrink-0">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className={`h-7 w-7 ${item.is_favorite ? 'text-red-500' : ''}`}
+                          onClick={() => handleToggleFavorite(item)}
+                        >
+                          <Heart className={`w-3 h-3 ${item.is_favorite ? 'fill-current' : ''}`} />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={() => setEditingItem(item)}
+                        >
+                          <Pencil className="w-3 h-3" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-destructive hover:text-destructive"
+                          onClick={() => handleDeleteItem(item.id)}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
                     </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          
-          <Tabs value={filterFavorite} onValueChange={(v) => setFilterFavorite(v as FavoriteFilter)}>
-            <TabsList>
-              <TabsTrigger value="all">Semua</TabsTrigger>
-              <TabsTrigger value="favorite" className="gap-1">
-                <Heart className="w-3 h-3" />
-                Favorit
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-        </div>
 
-        {/* Items Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredItems.map((item) => (
-            <Card key={item.id} className="hover:shadow-md transition-shadow">
-              <CardContent className="p-4 space-y-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {item.type === 'doa' ? (
-                      <BookOpen className="w-4 h-4 text-primary flex-shrink-0" />
-                    ) : (
-                      <MessageCircle className="w-4 h-4 text-secondary flex-shrink-0" />
+                    <h3 className="font-semibold text-sm">{item.title}</h3>
+
+                    {item.type === 'doa' && item.content_arabic && (
+                      <p className="text-right font-arabic text-base leading-loose text-foreground/90" dir="rtl">
+                        {item.content_arabic}
+                      </p>
                     )}
-                    <Badge variant={item.type === 'doa' ? 'default' : 'secondary'}>
-                      {item.type === 'doa' ? 'Doa' : 'Nasehat'}
-                    </Badge>
-                    {item.category && (
-                      <Badge 
-                        variant="outline" 
-                        style={{ borderColor: getCategoryColor(item.category), color: getCategoryColor(item.category) }}
+
+                    <p className={`text-sm text-muted-foreground ${item.type === 'nasehat' ? 'line-clamp-4 whitespace-pre-wrap' : 'line-clamp-3'}`}>
+                      {item.content_indonesian}
+                    </p>
+
+                    {item.source && (
+                      <p className="text-xs text-muted-foreground italic">
+                        Sumber: {item.source}
+                      </p>
+                    )}
+
+                    <div className="flex items-center justify-between pt-2 border-t">
+                      <span className="text-xs text-muted-foreground">
+                        {format(new Date(item.created_at), 'dd MMM yyyy', { locale: idLocale })}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs"
+                        onClick={() => handleCopyToWhatsApp(item)}
                       >
-                        {item.category}
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="flex gap-1 flex-shrink-0">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className={`h-7 w-7 ${item.is_favorite ? 'text-red-500' : ''}`}
-                      onClick={() => handleToggleFavorite(item)}
-                    >
-                      <Heart className={`w-3 h-3 ${item.is_favorite ? 'fill-current' : ''}`} />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => setEditingItem(item)}
-                    >
-                      <Pencil className="w-3 h-3" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-destructive hover:text-destructive"
-                      onClick={() => handleDeleteItem(item.id)}
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </Button>
-                  </div>
-                </div>
+                        <ExternalLink className="w-3 h-3 mr-1" />
+                        Share WA
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
 
-                <h3 className="font-semibold text-sm">{item.title}</h3>
+            {filteredItems.length === 0 && (
+              <div className="text-center py-12 text-muted-foreground">
+                <BookOpen className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <p>Belum ada doa atau nasehat</p>
+                <p className="text-sm">Tambahkan doa atau nasehat pertama Anda</p>
+              </div>
+            )}
+          </TabsContent>
 
-                {item.type === 'doa' && item.content_arabic && (
-                  <p className="text-right font-arabic text-base leading-loose text-foreground/90" dir="rtl">
-                    {item.content_arabic}
+          {/* Publik Tab */}
+          <TabsContent value="public" className="space-y-4">
+            {!isPremium ? (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <Crown className="w-12 h-12 text-amber-500 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold mb-2">Fitur Premium</h3>
+                  <p className="text-muted-foreground mb-4">
+                    Akses kumpulan doa & nasehat dari semua pengguna dengan berlangganan premium
                   </p>
-                )}
-
-                <p className={`text-sm text-muted-foreground ${item.type === 'nasehat' ? 'line-clamp-4 whitespace-pre-wrap' : 'line-clamp-3'}`}>
-                  {item.content_indonesian}
-                </p>
-
-                {item.source && (
-                  <p className="text-xs text-muted-foreground italic">
-                    Sumber: {item.source}
-                  </p>
-                )}
-
-                <div className="flex items-center justify-between pt-2 border-t">
-                  <span className="text-xs text-muted-foreground">
-                    {format(new Date(item.created_at), 'dd MMM yyyy', { locale: idLocale })}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 text-xs"
-                    onClick={() => handleCopyToWhatsApp(item)}
-                  >
-                    <ExternalLink className="w-3 h-3 mr-1" />
-                    Share WA
+                  <Button onClick={() => setShowPremiumDialog(true)}>
+                    Lihat Paket Berlangganan
                   </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <>
+                {/* Public Filters */}
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Cari doa atau nasehat publik..."
+                      value={publicSearchQuery}
+                      onChange={(e) => setPublicSearchQuery(e.target.value)}
+                      className="pl-10"
+                    />
+                  </div>
+                  <Select value={publicFilterType} onValueChange={(value: ItemType) => setPublicFilterType(value)}>
+                    <SelectTrigger className="w-full sm:w-[140px]">
+                      <Filter className="w-4 h-4 mr-2" />
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Semua</SelectItem>
+                      <SelectItem value="doa">Doa</SelectItem>
+                      <SelectItem value="nasehat">Nasehat</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
 
-        {filteredItems.length === 0 && (
-          <div className="text-center py-12 text-muted-foreground">
-            <BookOpen className="w-12 h-12 mx-auto mb-4 opacity-50" />
-            <p>Belum ada doa atau nasehat</p>
-            <p className="text-sm">Tambahkan doa atau nasehat pertama Anda</p>
-          </div>
-        )}
+                {/* Public Items Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {filteredPublicItems.map((item) => (
+                    <Card key={item.id} className="hover:shadow-md transition-shadow">
+                      <CardContent className="p-4 space-y-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {item.type === 'doa' ? (
+                              <BookOpen className="w-4 h-4 text-primary flex-shrink-0" />
+                            ) : (
+                              <MessageCircle className="w-4 h-4 text-secondary flex-shrink-0" />
+                            )}
+                            <Badge variant={item.type === 'doa' ? 'default' : 'secondary'}>
+                              {item.type === 'doa' ? 'Doa' : 'Nasehat'}
+                            </Badge>
+                            {item.category && (
+                              <Badge variant="outline">
+                                {item.category}
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+
+                        <h3 className="font-semibold text-sm">{item.title}</h3>
+
+                        {item.type === 'doa' && item.content_arabic && (
+                          <p className="text-right font-arabic text-base leading-loose text-foreground/90" dir="rtl">
+                            {item.content_arabic}
+                          </p>
+                        )}
+
+                        <p className={`text-sm text-muted-foreground ${item.type === 'nasehat' ? 'line-clamp-4 whitespace-pre-wrap' : 'line-clamp-3'}`}>
+                          {item.content_indonesian}
+                        </p>
+
+                        {item.source && (
+                          <p className="text-xs text-muted-foreground italic">
+                            Sumber: {item.source}
+                          </p>
+                        )}
+
+                        <div className="flex items-center justify-between pt-2 border-t">
+                          <span className="text-xs text-muted-foreground">
+                            {format(new Date(item.created_at), 'dd MMM yyyy', { locale: idLocale })}
+                          </span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 text-xs"
+                            onClick={() => handleCopyToWhatsApp(item)}
+                          >
+                            <ExternalLink className="w-3 h-3 mr-1" />
+                            Share WA
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+
+                {filteredPublicItems.length === 0 && (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <Globe className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                    <p>Belum ada doa atau nasehat publik</p>
+                    <p className="text-sm">Doa dan nasehat dari semua pengguna akan muncul di sini</p>
+                  </div>
+                )}
+              </>
+            )}
+          </TabsContent>
+        </Tabs>
+
+        {/* Premium Dialog */}
+        <PremiumDialog 
+          open={showPremiumDialog} 
+          onOpenChange={setShowPremiumDialog}
+          featureName="Doa & Nasehat Publik"
+        />
       </div>
 
       {/* Edit Dialog */}
