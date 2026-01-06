@@ -239,6 +239,42 @@ export type Database = {
           },
         ]
       }
+      prayers_advices: {
+        Row: {
+          content_arabic: string | null
+          content_indonesian: string
+          created_at: string
+          id: string
+          source: string | null
+          title: string
+          type: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          content_arabic?: string | null
+          content_indonesian: string
+          created_at?: string
+          id?: string
+          source?: string | null
+          title: string
+          type: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          content_arabic?: string | null
+          content_indonesian?: string
+          created_at?: string
+          id?: string
+          source?: string | null
+          title?: string
+          type?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null

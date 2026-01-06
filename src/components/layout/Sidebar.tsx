@@ -29,6 +29,7 @@ import {
   Menu,
   Wallet,
   StickyNote,
+  BookOpen,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
@@ -47,6 +48,7 @@ const financeItems = [
 
 const notesItems = [
   { icon: StickyNote, label: 'Catatan', href: '/notes' },
+  { icon: BookOpen, label: 'Doa & Nasehat', href: '/prayers-advices' },
 ];
 
 const settingsItems = [
