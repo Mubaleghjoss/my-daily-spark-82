@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useUserRole } from '@/hooks/useUserRole';
+import { useSubscription } from '@/hooks/useSubscription';
 import { useDataExport } from '@/hooks/useDataExport';
 import { supabase } from '@/integrations/supabase/client';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -11,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { usePWAUpdate } from '@/hooks/usePWAUpdate';
+import { PremiumDialog } from '@/components/PremiumDialog';
 import { 
   User, 
   Mail, 
@@ -25,14 +27,17 @@ import {
   Smartphone,
   Shield,
   Database,
-  FileJson
+  FileJson,
+  Crown
 } from 'lucide-react';
 
 export default function Settings() {
   const { user } = useAuth();
   const { role, isAdmin, loading: roleLoading } = useUserRole();
+  const { isPremium, subscriptionLabel, daysRemaining, loading: subLoading } = useSubscription();
   const { exportUserData, exportAllUsersData, downloadAsJson, exporting } = useDataExport();
   const { toast } = useToast();
+  const [showPremiumDialog, setShowPremiumDialog] = useState(false);
   const { 
     needRefresh, 
     offlineReady, 
@@ -212,20 +217,35 @@ export default function Settings() {
   return (
     <AppLayout>
       <div className="max-w-2xl mx-auto space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-2">
           <div>
             <h1 className="text-3xl font-bold">Pengaturan</h1>
             <p className="text-muted-foreground">Kelola akun dan preferensimu</p>
           </div>
-          {!roleLoading && role && (
-            <Badge 
-              variant={isAdmin ? 'default' : 'secondary'}
-              className={isAdmin ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white' : ''}
-            >
-              <Shield className="h-3 w-3 mr-1" />
-              {isAdmin ? 'Admin' : 'User'}
-            </Badge>
-          )}
+          <div className="flex gap-2 flex-wrap">
+            {!subLoading && (
+              <Badge 
+                variant={isPremium ? 'default' : 'outline'}
+                className={isPremium ? 'bg-gradient-to-r from-amber-500 to-yellow-500 text-white' : 'cursor-pointer'}
+                onClick={() => !isPremium && setShowPremiumDialog(true)}
+              >
+                <Crown className="h-3 w-3 mr-1" />
+                {subscriptionLabel}
+                {daysRemaining !== null && daysRemaining > 0 && (
+                  <span className="ml-1">({daysRemaining} hari)</span>
+                )}
+              </Badge>
+            )}
+            {!roleLoading && role && (
+              <Badge 
+                variant={isAdmin ? 'default' : 'secondary'}
+                className={isAdmin ? 'bg-gradient-to-r from-purple-500 to-indigo-500 text-white' : ''}
+              >
+                <Shield className="h-3 w-3 mr-1" />
+                {isAdmin ? 'Admin' : 'User'}
+              </Badge>
+            )}
+          </div>
         </div>
 
         {/* Data Export Section */}
@@ -517,6 +537,12 @@ export default function Settings() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Premium Dialog */}
+      <PremiumDialog 
+        open={showPremiumDialog} 
+        onOpenChange={setShowPremiumDialog}
+      />
     </AppLayout>
   );
 }

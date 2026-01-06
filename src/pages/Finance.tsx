@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
+import { useSubscription } from "@/hooks/useSubscription";
 import { supabase } from "@/integrations/supabase/client";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
+import { PremiumDialog } from "@/components/PremiumDialog";
 import { 
   Plus, 
   TrendingUp, 
@@ -29,7 +31,8 @@ import {
   Phone,
   RefreshCw,
   Play,
-  Pause
+  Pause,
+  Crown
 } from "lucide-react";
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfDay, endOfDay, parseISO, addDays, addWeeks, addMonths, addYears } from "date-fns";
 import { id } from "date-fns/locale";
@@ -97,6 +100,9 @@ const CHART_COLORS = ["#22c55e", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6", "#e
 export default function Finance() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { isPremium } = useSubscription();
+  const [showPremiumDialog, setShowPremiumDialog] = useState(false);
+  const [premiumFeatureName, setPremiumFeatureName] = useState("");
   
   const [categories, setCategories] = useState<TransactionCategory[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -926,71 +932,86 @@ export default function Finance() {
             <p className="text-muted-foreground">Kelola pemasukan dan pengeluaranmu</p>
           </div>
           <div className="flex gap-2 flex-wrap">
-          <Dialog open={showAddBudget} onOpenChange={setShowAddBudget}>
-            <DialogTrigger asChild>
-              <Button variant="outline" size="sm">
-                <Target className="h-4 w-4 mr-2" />
-                Budget
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Atur Budget</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div>
-                  <Label>Kategori</Label>
-                  <Select
-                    value={newBudget.category_id}
-                    onValueChange={(v) => setNewBudget({ ...newBudget, category_id: v })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Pilih kategori" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {categories
-                        .filter((c) => c.type === "expense")
-                        .map((cat) => (
-                          <SelectItem key={cat.id} value={cat.id}>
-                            {cat.name}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label>Periode</Label>
-                  <Select
-                    value={newBudget.period}
-                    onValueChange={(v: "daily" | "weekly" | "monthly") =>
-                      setNewBudget({ ...newBudget, period: v })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="daily">Harian</SelectItem>
-                      <SelectItem value="weekly">Mingguan</SelectItem>
-                      <SelectItem value="monthly">Bulanan</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label>Jumlah Budget</Label>
-                  <Input
-                    type="number"
-                    placeholder="100000"
-                    value={newBudget.amount}
-                    onChange={(e) => setNewBudget({ ...newBudget, amount: e.target.value })}
-                  />
-                </div>
-                <Button onClick={handleAddBudget} className="w-full">
-                  Simpan Budget
+          {isPremium ? (
+            <Dialog open={showAddBudget} onOpenChange={setShowAddBudget}>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Target className="h-4 w-4 mr-2" />
+                  Budget
                 </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Atur Budget</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div>
+                    <Label>Kategori</Label>
+                    <Select
+                      value={newBudget.category_id}
+                      onValueChange={(v) => setNewBudget({ ...newBudget, category_id: v })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Pilih kategori" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categories
+                          .filter((c) => c.type === "expense")
+                          .map((cat) => (
+                            <SelectItem key={cat.id} value={cat.id}>
+                              {cat.name}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Periode</Label>
+                    <Select
+                      value={newBudget.period}
+                      onValueChange={(v: "daily" | "weekly" | "monthly") =>
+                        setNewBudget({ ...newBudget, period: v })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="daily">Harian</SelectItem>
+                        <SelectItem value="weekly">Mingguan</SelectItem>
+                        <SelectItem value="monthly">Bulanan</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Jumlah Budget</Label>
+                    <Input
+                      type="number"
+                      placeholder="100000"
+                      value={newBudget.amount}
+                      onChange={(e) => setNewBudget({ ...newBudget, amount: e.target.value })}
+                    />
+                  </div>
+                  <Button onClick={handleAddBudget} className="w-full">
+                    Simpan Budget
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          ) : (
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => {
+                setPremiumFeatureName("Budget");
+                setShowPremiumDialog(true);
+              }}
+            >
+              <Target className="h-4 w-4 mr-2" />
+              Budget
+              <Crown className="h-3.5 w-3.5 ml-2 text-amber-500" />
+            </Button>
+          )}
 
           <Dialog open={showAddTransaction} onOpenChange={(open) => {
             setShowAddTransaction(open);
@@ -1163,54 +1184,69 @@ export default function Finance() {
           </Dialog>
 
           {/* Export Dialog */}
-          <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
-            <DialogTrigger asChild>
-              <Button variant="outline" size="sm">
-                <Download className="h-4 w-4 mr-2" />
-                Ekspor
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Ekspor Laporan Keuangan</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <p className="text-sm text-muted-foreground">
-                  Periode: {periodLabel[statPeriod]} | {filteredTransactions.length} transaksi
-                </p>
-                
-                <Button onClick={handleExportExcel} className="w-full" variant="outline">
+          {isPremium ? (
+            <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm">
                   <Download className="h-4 w-4 mr-2" />
-                  Download Excel (.xlsx)
+                  Ekspor
                 </Button>
-
-                <div className="border-t pt-4">
-                  <Label className="flex items-center gap-2 mb-2">
-                    <MessageCircle className="h-4 w-4" />
-                    Kirim ke WhatsApp
-                  </Label>
-                  <div className="flex gap-2">
-                    <div className="relative flex-1">
-                      <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        placeholder="08123456789"
-                        value={exportWhatsappNumber}
-                        onChange={(e) => setExportWhatsappNumber(e.target.value)}
-                        className="pl-10"
-                      />
-                    </div>
-                    <Button onClick={handleSendWhatsapp}>
-                      <MessageCircle className="h-4 w-4 mr-2" />
-                      Kirim
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Masukkan nomor tanpa tanda + atau spasi
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Ekspor Laporan Keuangan</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <p className="text-sm text-muted-foreground">
+                    Periode: {periodLabel[statPeriod]} | {filteredTransactions.length} transaksi
                   </p>
+                  
+                  <Button onClick={handleExportExcel} className="w-full" variant="outline">
+                    <Download className="h-4 w-4 mr-2" />
+                    Download Excel (.xlsx)
+                  </Button>
+
+                  <div className="border-t pt-4">
+                    <Label className="flex items-center gap-2 mb-2">
+                      <MessageCircle className="h-4 w-4" />
+                      Kirim ke WhatsApp
+                    </Label>
+                    <div className="flex gap-2">
+                      <div className="relative flex-1">
+                        <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          placeholder="08123456789"
+                          value={exportWhatsappNumber}
+                          onChange={(e) => setExportWhatsappNumber(e.target.value)}
+                          className="pl-10"
+                        />
+                      </div>
+                      <Button onClick={handleSendWhatsapp}>
+                        <MessageCircle className="h-4 w-4 mr-2" />
+                        Kirim
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Masukkan nomor tanpa tanda + atau spasi
+                    </p>
+                  </div>
                 </div>
-              </div>
-            </DialogContent>
-          </Dialog>
+              </DialogContent>
+            </Dialog>
+          ) : (
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => {
+                setPremiumFeatureName("Export");
+                setShowPremiumDialog(true);
+              }}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Ekspor
+              <Crown className="h-3.5 w-3.5 ml-2 text-amber-500" />
+            </Button>
+          )}
 
           {/* Recurring Transaction Dialog */}
           <Dialog open={showAddRecurring} onOpenChange={(open) => {
@@ -1798,6 +1834,13 @@ export default function Finance() {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Premium Dialog */}
+      <PremiumDialog 
+        open={showPremiumDialog} 
+        onOpenChange={setShowPremiumDialog}
+        featureName={premiumFeatureName}
+      />
     </div>
     </AppLayout>
   );

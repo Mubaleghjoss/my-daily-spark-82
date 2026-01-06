@@ -8,6 +8,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { useSubscription } from '@/hooks/useSubscription';
+import { PremiumDialog } from '@/components/PremiumDialog';
 import { toast } from 'sonner';
 import { Plus, GripVertical, Pencil, Trash2, StickyNote, Clock, CheckCircle2, Calendar, FileText, Search, Filter } from 'lucide-react';
 import { format } from 'date-fns';
@@ -49,6 +51,8 @@ const statusConfig = {
 
 export default function Notes() {
   const { user } = useAuth();
+  const { isPremium, loading: subscriptionLoading } = useSubscription();
+  const [showPremiumDialog, setShowPremiumDialog] = useState(false);
   const [notes, setNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddNote, setShowAddNote] = useState(false);
@@ -58,6 +62,13 @@ export default function Notes() {
   const [draggedNote, setDraggedNote] = useState<Note | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
+
+  // Show premium dialog if not premium
+  useEffect(() => {
+    if (!subscriptionLoading && !isPremium) {
+      setShowPremiumDialog(true);
+    }
+  }, [isPremium, subscriptionLoading]);
 
   useEffect(() => {
     if (user) {
@@ -446,6 +457,13 @@ export default function Notes() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Premium Dialog */}
+      <PremiumDialog 
+        open={showPremiumDialog} 
+        onOpenChange={setShowPremiumDialog}
+        featureName="Catatan"
+      />
     </AppLayout>
   );
 }

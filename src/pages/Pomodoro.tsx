@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
+import { useSubscription } from '@/hooks/useSubscription';
 import { supabase } from '@/integrations/supabase/client';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -21,6 +22,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import { PremiumDialog } from '@/components/PremiumDialog';
 import { 
   Bell, 
   BellOff, 
@@ -105,6 +107,15 @@ const createAlarmSound = () => {
 export default function Pomodoro() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { isPremium, loading: subscriptionLoading } = useSubscription();
+  const [showPremiumDialog, setShowPremiumDialog] = useState(false);
+
+  // Show premium dialog if not premium
+  useEffect(() => {
+    if (!subscriptionLoading && !isPremium) {
+      setShowPremiumDialog(true);
+    }
+  }, [isPremium, subscriptionLoading]);
 
   // Load settings from localStorage
   const loadSettings = (): TimerSettings => {
@@ -909,6 +920,13 @@ export default function Pomodoro() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Premium Dialog */}
+      <PremiumDialog 
+        open={showPremiumDialog} 
+        onOpenChange={setShowPremiumDialog}
+        featureName="Focus Timer"
+      />
     </AppLayout>
   );
 }

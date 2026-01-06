@@ -2,6 +2,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import { useUserRole } from '@/hooks/useUserRole';
+import { useSubscription } from '@/hooks/useSubscription';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
@@ -32,6 +33,7 @@ import {
   StickyNote,
   BookOpen,
   Shield,
+  Crown,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
@@ -67,6 +69,7 @@ export function Sidebar() {
   const location = useLocation();
   const { user, signOut } = useAuth();
   const { isAdmin } = useUserRole();
+  const { isPremium } = useSubscription();
 
   // Close mobile menu on route change
   useEffect(() => {
@@ -118,6 +121,7 @@ export function Sidebar() {
         <div className="space-y-1">
           {activityItems.map((item) => {
             const isActive = location.pathname === item.href;
+            const isPremiumFeature = item.href === '/pomodoro';
             return (
               <Link
                 key={item.href}
@@ -131,7 +135,14 @@ export function Sidebar() {
                 )}
               >
                 <item.icon className={cn('h-5 w-5 flex-shrink-0', isActive && 'text-primary')} />
-                {(isMobile || !collapsed) && <span>{item.label}</span>}
+                {(isMobile || !collapsed) && (
+                  <span className="flex items-center gap-2">
+                    {item.label}
+                    {isPremiumFeature && !isPremium && (
+                      <Crown className="h-3.5 w-3.5 text-amber-500" />
+                    )}
+                  </span>
+                )}
               </Link>
             );
           })}
@@ -161,7 +172,12 @@ export function Sidebar() {
                 )}
               >
                 <item.icon className={cn('h-5 w-5 flex-shrink-0', isActive && 'text-primary')} />
-                {(isMobile || !collapsed) && <span>{item.label}</span>}
+                {(isMobile || !collapsed) && (
+                  <span className="flex items-center gap-2">
+                    {item.label}
+                    {!isPremium && <Crown className="h-3.5 w-3.5 text-amber-500" />}
+                  </span>
+                )}
               </Link>
             );
           })}
@@ -178,6 +194,7 @@ export function Sidebar() {
         <div className="space-y-1">
           {notesItems.map((item) => {
             const isActive = location.pathname === item.href;
+            const isPremiumFeature = item.href === '/notes';
             return (
               <Link
                 key={item.href}
@@ -191,7 +208,14 @@ export function Sidebar() {
                 )}
               >
                 <item.icon className={cn('h-5 w-5 flex-shrink-0', isActive && 'text-primary')} />
-                {(isMobile || !collapsed) && <span>{item.label}</span>}
+                {(isMobile || !collapsed) && (
+                  <span className="flex items-center gap-2">
+                    {item.label}
+                    {isPremiumFeature && !isPremium && (
+                      <Crown className="h-3.5 w-3.5 text-amber-500" />
+                    )}
+                  </span>
+                )}
               </Link>
             );
           })}
