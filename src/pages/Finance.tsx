@@ -1,0 +1,892 @@
+import { useState, useEffect } from "react";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { useToast } from "@/hooks/use-toast";
+import { 
+  Plus, 
+  TrendingUp, 
+  TrendingDown, 
+  Wallet, 
+  PieChart as PieChartIcon,
+  Calendar,
+  Trash2,
+  Edit,
+  Target
+} from "lucide-react";
+import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfDay, endOfDay, parseISO } from "date-fns";
+import { id } from "date-fns/locale";
+import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from "recharts";
+
+interface TransactionCategory {
+  id: string;
+  name: string;
+  type: "income" | "expense";
+  color: string;
+  icon?: string;
+}
+
+interface Transaction {
+  id: string;
+  category_id: string | null;
+  amount: number;
+  type: "income" | "expense";
+  description: string | null;
+  transaction_date: string;
+  category?: TransactionCategory;
+}
+
+interface Budget {
+  id: string;
+  category_id: string;
+  amount: number;
+  period: "daily" | "weekly" | "monthly";
+  category?: TransactionCategory;
+}
+
+type StatPeriod = "daily" | "weekly" | "monthly";
+
+const DEFAULT_CATEGORIES: Omit<TransactionCategory, "id">[] = [
+  { name: "Gaji", type: "income", color: "#22c55e" },
+  { name: "Bonus", type: "income", color: "#10b981" },
+  { name: "Investasi", type: "income", color: "#06b6d4" },
+  { name: "Lainnya (Masuk)", type: "income", color: "#3b82f6" },
+  { name: "Makan", type: "expense", color: "#f59e0b" },
+  { name: "Transport", type: "expense", color: "#ef4444" },
+  { name: "Belanja", type: "expense", color: "#ec4899" },
+  { name: "Tagihan", type: "expense", color: "#8b5cf6" },
+  { name: "Hiburan", type: "expense", color: "#f97316" },
+  { name: "Kesehatan", type: "expense", color: "#14b8a6" },
+  { name: "Lainnya (Keluar)", type: "expense", color: "#6b7280" },
+];
+
+const CHART_COLORS = ["#22c55e", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#06b6d4", "#f97316"];
+
+export default function Finance() {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  
+  const [categories, setCategories] = useState<TransactionCategory[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [budgets, setBudgets] = useState<Budget[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  
+  const [showAddTransaction, setShowAddTransaction] = useState(false);
+  const [showAddBudget, setShowAddBudget] = useState(false);
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  
+  const [newTransaction, setNewTransaction] = useState({
+    type: "expense" as "income" | "expense",
+    amount: "",
+    category_id: "",
+    description: "",
+    transaction_date: format(new Date(), "yyyy-MM-dd"),
+  });
+  
+  const [newBudget, setNewBudget] = useState({
+    category_id: "",
+    amount: "",
+    period: "monthly" as "daily" | "weekly" | "monthly",
+  });
+
+  const [statPeriod, setStatPeriod] = useState<StatPeriod>("monthly");
+
+  useEffect(() => {
+    if (user) {
+      fetchData();
+    }
+  }, [user]);
+
+  const fetchData = async () => {
+    if (!user) return;
+    setIsLoading(true);
+
+    try {
+      // Fetch categories
+      let { data: cats, error: catError } = await supabase
+        .from("transaction_categories")
+        .select("*")
+        .eq("user_id", user.id);
+
+      if (catError) throw catError;
+
+      // Create default categories if none exist
+      if (!cats || cats.length === 0) {
+        const defaultCats = DEFAULT_CATEGORIES.map((c) => ({
+          ...c,
+          user_id: user.id,
+        }));
+        
+        const { data: newCats, error: insertError } = await supabase
+          .from("transaction_categories")
+          .insert(defaultCats)
+          .select();
+
+        if (insertError) throw insertError;
+        cats = newCats;
+      }
+
+      setCategories(cats as TransactionCategory[]);
+
+      // Fetch transactions
+      const { data: trans, error: transError } = await supabase
+        .from("transactions")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("transaction_date", { ascending: false });
+
+      if (transError) throw transError;
+
+      const transWithCat = (trans || []).map((t) => ({
+        ...t,
+        amount: Number(t.amount),
+        category: cats?.find((c) => c.id === t.category_id),
+      }));
+      setTransactions(transWithCat as Transaction[]);
+
+      // Fetch budgets
+      const { data: budgetData, error: budgetError } = await supabase
+        .from("budgets")
+        .select("*")
+        .eq("user_id", user.id);
+
+      if (budgetError) throw budgetError;
+
+      const budgetsWithCat = (budgetData || []).map((b) => ({
+        ...b,
+        amount: Number(b.amount),
+        category: cats?.find((c) => c.id === b.category_id),
+      }));
+      setBudgets(budgetsWithCat as Budget[]);
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleAddTransaction = async () => {
+    if (!user || !newTransaction.amount || !newTransaction.category_id) {
+      toast({
+        title: "Error",
+        description: "Mohon lengkapi semua field",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const { error } = await supabase.from("transactions").insert({
+        user_id: user.id,
+        type: newTransaction.type,
+        amount: parseFloat(newTransaction.amount),
+        category_id: newTransaction.category_id,
+        description: newTransaction.description || null,
+        transaction_date: newTransaction.transaction_date,
+      });
+
+      if (error) throw error;
+
+      toast({ title: "Transaksi berhasil ditambahkan" });
+      setShowAddTransaction(false);
+      setNewTransaction({
+        type: "expense",
+        amount: "",
+        category_id: "",
+        description: "",
+        transaction_date: format(new Date(), "yyyy-MM-dd"),
+      });
+      fetchData();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleUpdateTransaction = async () => {
+    if (!editingTransaction) return;
+
+    try {
+      const { error } = await supabase
+        .from("transactions")
+        .update({
+          type: newTransaction.type,
+          amount: parseFloat(newTransaction.amount),
+          category_id: newTransaction.category_id,
+          description: newTransaction.description || null,
+          transaction_date: newTransaction.transaction_date,
+        })
+        .eq("id", editingTransaction.id);
+
+      if (error) throw error;
+
+      toast({ title: "Transaksi berhasil diperbarui" });
+      setEditingTransaction(null);
+      setShowAddTransaction(false);
+      setNewTransaction({
+        type: "expense",
+        amount: "",
+        category_id: "",
+        description: "",
+        transaction_date: format(new Date(), "yyyy-MM-dd"),
+      });
+      fetchData();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDeleteTransaction = async (id: string) => {
+    try {
+      const { error } = await supabase.from("transactions").delete().eq("id", id);
+      if (error) throw error;
+      toast({ title: "Transaksi dihapus" });
+      fetchData();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleAddBudget = async () => {
+    if (!user || !newBudget.amount || !newBudget.category_id) {
+      toast({
+        title: "Error",
+        description: "Mohon lengkapi semua field",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      // Check if budget exists for this category and period
+      const existing = budgets.find(
+        (b) => b.category_id === newBudget.category_id && b.period === newBudget.period
+      );
+
+      if (existing) {
+        const { error } = await supabase
+          .from("budgets")
+          .update({ amount: parseFloat(newBudget.amount) })
+          .eq("id", existing.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("budgets").insert({
+          user_id: user.id,
+          category_id: newBudget.category_id,
+          amount: parseFloat(newBudget.amount),
+          period: newBudget.period,
+        });
+        if (error) throw error;
+      }
+
+      toast({ title: "Budget berhasil disimpan" });
+      setShowAddBudget(false);
+      setNewBudget({ category_id: "", amount: "", period: "monthly" });
+      fetchData();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDeleteBudget = async (id: string) => {
+    try {
+      const { error } = await supabase.from("budgets").delete().eq("id", id);
+      if (error) throw error;
+      toast({ title: "Budget dihapus" });
+      fetchData();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const openEditTransaction = (t: Transaction) => {
+    setEditingTransaction(t);
+    setNewTransaction({
+      type: t.type,
+      amount: t.amount.toString(),
+      category_id: t.category_id || "",
+      description: t.description || "",
+      transaction_date: t.transaction_date,
+    });
+    setShowAddTransaction(true);
+  };
+
+  // Calculate statistics
+  const getDateRange = (period: StatPeriod) => {
+    const now = new Date();
+    switch (period) {
+      case "daily":
+        return { start: startOfDay(now), end: endOfDay(now) };
+      case "weekly":
+        return { start: startOfWeek(now, { locale: id }), end: endOfWeek(now, { locale: id }) };
+      case "monthly":
+        return { start: startOfMonth(now), end: endOfMonth(now) };
+    }
+  };
+
+  const getFilteredTransactions = (period: StatPeriod) => {
+    const { start, end } = getDateRange(period);
+    return transactions.filter((t) => {
+      const date = parseISO(t.transaction_date);
+      return date >= start && date <= end;
+    });
+  };
+
+  const filteredTransactions = getFilteredTransactions(statPeriod);
+  
+  const totalIncome = filteredTransactions
+    .filter((t) => t.type === "income")
+    .reduce((sum, t) => sum + t.amount, 0);
+  
+  const totalExpense = filteredTransactions
+    .filter((t) => t.type === "expense")
+    .reduce((sum, t) => sum + t.amount, 0);
+  
+  const balance = totalIncome - totalExpense;
+
+  // Chart data
+  const expenseByCategory = categories
+    .filter((c) => c.type === "expense")
+    .map((cat) => {
+      const total = filteredTransactions
+        .filter((t) => t.category_id === cat.id)
+        .reduce((sum, t) => sum + t.amount, 0);
+      return { name: cat.name, value: total, color: cat.color };
+    })
+    .filter((c) => c.value > 0);
+
+  const incomeByCategory = categories
+    .filter((c) => c.type === "income")
+    .map((cat) => {
+      const total = filteredTransactions
+        .filter((t) => t.category_id === cat.id)
+        .reduce((sum, t) => sum + t.amount, 0);
+      return { name: cat.name, value: total, color: cat.color };
+    })
+    .filter((c) => c.value > 0);
+
+  // Budget progress
+  const getBudgetProgress = (budget: Budget) => {
+    const { start, end } = getDateRange(budget.period);
+    const spent = transactions
+      .filter((t) => {
+        if (t.category_id !== budget.category_id) return false;
+        const date = parseISO(t.transaction_date);
+        return date >= start && date <= end;
+      })
+      .reduce((sum, t) => sum + t.amount, 0);
+    
+    const percentage = Math.min((spent / budget.amount) * 100, 100);
+    const isOver = spent > budget.amount;
+    return { spent, percentage, isOver };
+  };
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat("id-ID", {
+      style: "currency",
+      currency: "IDR",
+      minimumFractionDigits: 0,
+    }).format(amount);
+  };
+
+  const periodLabel = {
+    daily: "Hari Ini",
+    weekly: "Minggu Ini",
+    monthly: "Bulan Ini",
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="container mx-auto p-4 space-y-6 max-w-6xl">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Keuangan</h1>
+        <div className="flex gap-2">
+          <Dialog open={showAddBudget} onOpenChange={setShowAddBudget}>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm">
+                <Target className="h-4 w-4 mr-2" />
+                Budget
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Atur Budget</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label>Kategori</Label>
+                  <Select
+                    value={newBudget.category_id}
+                    onValueChange={(v) => setNewBudget({ ...newBudget, category_id: v })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Pilih kategori" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories
+                        .filter((c) => c.type === "expense")
+                        .map((cat) => (
+                          <SelectItem key={cat.id} value={cat.id}>
+                            {cat.name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Periode</Label>
+                  <Select
+                    value={newBudget.period}
+                    onValueChange={(v: "daily" | "weekly" | "monthly") =>
+                      setNewBudget({ ...newBudget, period: v })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="daily">Harian</SelectItem>
+                      <SelectItem value="weekly">Mingguan</SelectItem>
+                      <SelectItem value="monthly">Bulanan</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Jumlah Budget</Label>
+                  <Input
+                    type="number"
+                    placeholder="100000"
+                    value={newBudget.amount}
+                    onChange={(e) => setNewBudget({ ...newBudget, amount: e.target.value })}
+                  />
+                </div>
+                <Button onClick={handleAddBudget} className="w-full">
+                  Simpan Budget
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={showAddTransaction} onOpenChange={(open) => {
+            setShowAddTransaction(open);
+            if (!open) {
+              setEditingTransaction(null);
+              setNewTransaction({
+                type: "expense",
+                amount: "",
+                category_id: "",
+                description: "",
+                transaction_date: format(new Date(), "yyyy-MM-dd"),
+              });
+            }
+          }}>
+            <DialogTrigger asChild>
+              <Button size="sm">
+                <Plus className="h-4 w-4 mr-2" />
+                Transaksi
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>
+                  {editingTransaction ? "Edit Transaksi" : "Tambah Transaksi"}
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label>Tipe</Label>
+                  <Select
+                    value={newTransaction.type}
+                    onValueChange={(v: "income" | "expense") => {
+                      setNewTransaction({ ...newTransaction, type: v, category_id: "" });
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="income">Pemasukan</SelectItem>
+                      <SelectItem value="expense">Pengeluaran</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Kategori</Label>
+                  <Select
+                    value={newTransaction.category_id}
+                    onValueChange={(v) => setNewTransaction({ ...newTransaction, category_id: v })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Pilih kategori" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories
+                        .filter((c) => c.type === newTransaction.type)
+                        .map((cat) => (
+                          <SelectItem key={cat.id} value={cat.id}>
+                            {cat.name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Jumlah</Label>
+                  <Input
+                    type="number"
+                    placeholder="50000"
+                    value={newTransaction.amount}
+                    onChange={(e) => setNewTransaction({ ...newTransaction, amount: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label>Tanggal</Label>
+                  <Input
+                    type="date"
+                    value={newTransaction.transaction_date}
+                    onChange={(e) =>
+                      setNewTransaction({ ...newTransaction, transaction_date: e.target.value })
+                    }
+                  />
+                </div>
+                <div>
+                  <Label>Deskripsi (opsional)</Label>
+                  <Input
+                    placeholder="Catatan transaksi"
+                    value={newTransaction.description}
+                    onChange={(e) =>
+                      setNewTransaction({ ...newTransaction, description: e.target.value })
+                    }
+                  />
+                </div>
+                <Button
+                  onClick={editingTransaction ? handleUpdateTransaction : handleAddTransaction}
+                  className="w-full"
+                >
+                  {editingTransaction ? "Simpan Perubahan" : "Tambah Transaksi"}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Pemasukan</p>
+                <p className="text-2xl font-bold text-green-600">{formatCurrency(totalIncome)}</p>
+              </div>
+              <TrendingUp className="h-8 w-8 text-green-600" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Pengeluaran</p>
+                <p className="text-2xl font-bold text-red-600">{formatCurrency(totalExpense)}</p>
+              </div>
+              <TrendingDown className="h-8 w-8 text-red-600" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Saldo</p>
+                <p className={`text-2xl font-bold ${balance >= 0 ? "text-blue-600" : "text-red-600"}`}>
+                  {formatCurrency(balance)}
+                </p>
+              </div>
+              <Wallet className="h-8 w-8 text-blue-600" />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Period Selector */}
+      <div className="flex items-center gap-2">
+        <Calendar className="h-4 w-4 text-muted-foreground" />
+        <span className="text-sm text-muted-foreground">Statistik:</span>
+        <div className="flex gap-1">
+          {(["daily", "weekly", "monthly"] as StatPeriod[]).map((p) => (
+            <Button
+              key={p}
+              variant={statPeriod === p ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setStatPeriod(p)}
+            >
+              {periodLabel[p]}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      <Tabs defaultValue="transactions" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="transactions">Transaksi</TabsTrigger>
+          <TabsTrigger value="statistics">Statistik</TabsTrigger>
+          <TabsTrigger value="budgets">Budget</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="transactions" className="space-y-4">
+          {filteredTransactions.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center text-muted-foreground">
+                Belum ada transaksi {periodLabel[statPeriod].toLowerCase()}
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-2">
+              {filteredTransactions.map((t) => (
+                <Card key={t.id}>
+                  <CardContent className="p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="w-3 h-3 rounded-full"
+                        style={{ backgroundColor: t.category?.color || "#6b7280" }}
+                      />
+                      <div>
+                        <p className="font-medium">{t.category?.name || "Tidak berkategori"}</p>
+                        {t.description && (
+                          <p className="text-sm text-muted-foreground">{t.description}</p>
+                        )}
+                        <p className="text-xs text-muted-foreground">
+                          {format(parseISO(t.transaction_date), "dd MMM yyyy", { locale: id })}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`font-semibold ${
+                          t.type === "income" ? "text-green-600" : "text-red-600"
+                        }`}
+                      >
+                        {t.type === "income" ? "+" : "-"}
+                        {formatCurrency(t.amount)}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => openEditTransaction(t)}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDeleteTransaction(t.id)}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="statistics" className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <PieChartIcon className="h-5 w-5" />
+                  Pengeluaran per Kategori
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {expenseByCategory.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-8">Tidak ada data</p>
+                ) : (
+                  <ResponsiveContainer width="100%" height={250}>
+                    <PieChart>
+                      <Pie
+                        data={expenseByCategory}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={80}
+                        label={({ name, percent }) =>
+                          `${name} (${(percent * 100).toFixed(0)}%)`
+                        }
+                      >
+                        {expenseByCategory.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        formatter={(value: number) => formatCurrency(value)}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <PieChartIcon className="h-5 w-5" />
+                  Pemasukan per Kategori
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {incomeByCategory.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-8">Tidak ada data</p>
+                ) : (
+                  <ResponsiveContainer width="100%" height={250}>
+                    <PieChart>
+                      <Pie
+                        data={incomeByCategory}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={80}
+                        label={({ name, percent }) =>
+                          `${name} (${(percent * 100).toFixed(0)}%)`
+                        }
+                      >
+                        {incomeByCategory.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        formatter={(value: number) => formatCurrency(value)}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Perbandingan Pemasukan vs Pengeluaran</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart
+                  data={[
+                    { name: "Pemasukan", value: totalIncome, fill: "#22c55e" },
+                    { name: "Pengeluaran", value: totalExpense, fill: "#ef4444" },
+                  ]}
+                >
+                  <XAxis dataKey="name" />
+                  <YAxis tickFormatter={(v) => formatCurrency(v)} />
+                  <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                  <Bar dataKey="value" />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="budgets" className="space-y-4">
+          {budgets.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center text-muted-foreground">
+                Belum ada budget yang diatur
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {budgets.map((b) => {
+                const { spent, percentage, isOver } = getBudgetProgress(b);
+                return (
+                  <Card key={b.id}>
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <div
+                            className="w-3 h-3 rounded-full"
+                            style={{ backgroundColor: b.category?.color || "#6b7280" }}
+                          />
+                          <span className="font-medium">{b.category?.name}</span>
+                          <Badge variant="outline" className="text-xs">
+                            {b.period === "daily"
+                              ? "Harian"
+                              : b.period === "weekly"
+                              ? "Mingguan"
+                              : "Bulanan"}
+                          </Badge>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDeleteBudget(b.id)}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                      <Progress
+                        value={percentage}
+                        className={`h-2 ${isOver ? "[&>div]:bg-red-500" : ""}`}
+                      />
+                      <div className="flex justify-between mt-2 text-sm">
+                        <span className={isOver ? "text-red-600" : "text-muted-foreground"}>
+                          {formatCurrency(spent)} / {formatCurrency(b.amount)}
+                        </span>
+                        <span className={isOver ? "text-red-600 font-medium" : "text-muted-foreground"}>
+                          {isOver ? "Melebihi budget!" : `${percentage.toFixed(0)}%`}
+                        </span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
