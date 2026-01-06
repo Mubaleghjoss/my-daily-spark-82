@@ -1452,7 +1452,20 @@ export default function Finance() {
           <TabsTrigger value="transactions">Transaksi</TabsTrigger>
           <TabsTrigger value="recurring">Berulang</TabsTrigger>
           <TabsTrigger value="statistics">Statistik</TabsTrigger>
-          <TabsTrigger value="budgets">Budget</TabsTrigger>
+          <TabsTrigger 
+            value="budgets"
+            onClick={(e) => {
+              if (!isPremium) {
+                e.preventDefault();
+                setPremiumFeatureName("Budget");
+                setShowPremiumDialog(true);
+              }
+            }}
+            className="relative"
+          >
+            Budget
+            {!isPremium && <Crown className="h-3 w-3 ml-1 text-amber-500" />}
+          </TabsTrigger>
           <TabsTrigger value="categories">Kategori</TabsTrigger>
         </TabsList>
 
@@ -1704,7 +1717,25 @@ export default function Finance() {
         </TabsContent>
 
         <TabsContent value="budgets" className="space-y-4">
-          {budgets.length === 0 ? (
+          {!isPremium ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <Crown className="w-12 h-12 text-amber-500 mx-auto mb-4" />
+                <h3 className="text-lg font-semibold mb-2">Fitur Premium</h3>
+                <p className="text-muted-foreground mb-4">
+                  Kelola budget pengeluaranmu dengan berlangganan premium
+                </p>
+                <Button 
+                  onClick={() => {
+                    setPremiumFeatureName("Budget");
+                    setShowPremiumDialog(true);
+                  }}
+                >
+                  Lihat Paket Berlangganan
+                </Button>
+              </CardContent>
+            </Card>
+          ) : budgets.length === 0 ? (
             <Card>
               <CardContent className="py-8 text-center text-muted-foreground">
                 Belum ada budget yang diatur
