@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* TaskNest Dark Mode Modern Design System */
+/* Aktivitas-Ku Dark Mode Modern Design System */
 
 @layer base {
   :root {
@@ -36,7 +36,7 @@
 
     --radius: 0.75rem;
 
-    /* Custom colors for TaskNest - Light mode uses darker variants */
+    /* Custom colors for Aktivitas-Ku - Light mode uses darker variants */
     --neon-purple: 262 83% 58%;
     --neon-cyan: 199 89% 48%;
     --neon-pink: 330 81% 45%;

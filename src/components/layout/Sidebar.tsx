@@ -65,7 +65,7 @@ export function Sidebar() {
             <CheckSquare className="w-5 h-5 text-primary-foreground" />
           </div>
           {(isMobile || !collapsed) && (
-            <span className="font-bold text-lg gradient-text">TaskNest</span>
+            <span className="font-bold text-lg gradient-text">Aktivitas-Ku</span>
           )}
         </Link>
         {!isMobile && (
@@ -162,7 +162,7 @@ export function Sidebar() {
           <div className="p-1.5 rounded-lg gradient-primary">
             <CheckSquare className="w-4 h-4 text-primary-foreground" />
           </div>
-          <span className="font-bold gradient-text">TaskNest</span>
+          <span className="font-bold gradient-text">Aktivitas-Ku</span>
         </Link>
         
         <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>

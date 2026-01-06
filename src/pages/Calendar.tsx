@@ -54,6 +54,7 @@ interface Activity {
   id: string;
   title: string;
   parent_id: string | null;
+  children?: Activity[];
 }
 
 interface Completion {
@@ -67,11 +68,33 @@ interface CompletionDetail {
   completions: Completion[];
 }
 
+// Build nested activity structure
+function buildNestedActivities(flat: Activity[]): Activity[] {
+  const map = new Map<string, Activity>();
+  const roots: Activity[] = [];
+
+  flat.forEach((item) => {
+    map.set(item.id, { ...item, children: [] });
+  });
+
+  flat.forEach((item) => {
+    const current = map.get(item.id)!;
+    if (item.parent_id && map.has(item.parent_id)) {
+      map.get(item.parent_id)!.children!.push(current);
+    } else {
+      roots.push(current);
+    }
+  });
+
+  return roots;
+}
+
 export default function Calendar() {
   const { user } = useAuth();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<ViewMode>('month');
-  const [activities, setActivities] = useState<Activity[]>([]);
+  const [flatActivities, setFlatActivities] = useState<Activity[]>([]);
+  const [nestedActivities, setNestedActivities] = useState<Activity[]>([]);
   const [completions, setCompletions] = useState<Completion[]>([]);
   const [loading, setLoading] = useState(true);
   
@@ -102,9 +125,12 @@ export default function Calendar() {
     const { data: actData } = await supabase
       .from('activities')
       .select('id, title, parent_id')
-      .eq('user_id', user!.id);
+      .eq('user_id', user!.id)
+      .order('sort_order', { ascending: true });
     
-    setActivities(actData || []);
+    const flatList = (actData || []) as Activity[];
+    setFlatActivities(flatList);
+    setNestedActivities(buildNestedActivities(flatList));
 
     // Fetch completions for the current view range
     let startDate: Date, endDate: Date;
@@ -162,7 +188,7 @@ export default function Calendar() {
     const activityIds = [...new Set(dateCompletions.map(c => c.activity_id))];
     
     return activityIds.map(actId => {
-      const activity = activities.find(a => a.id === actId);
+      const activity = flatActivities.find(a => a.id === actId);
       const actCompletions = dateCompletions.filter(c => c.activity_id === actId);
       return {
         activity: activity || { id: actId, title: 'Aktivitas', parent_id: null },
@@ -173,7 +199,7 @@ export default function Calendar() {
 
   function getActivityLabel(activity: Activity): string {
     if (activity.parent_id) {
-      const parent = activities.find(a => a.id === activity.parent_id);
+      const parent = flatActivities.find(a => a.id === activity.parent_id);
       return parent ? `${parent.title} → ${activity.title}` : activity.title;
     }
     return activity.title;
@@ -182,7 +208,7 @@ export default function Calendar() {
   function getUncompletedActivitiesForDate(date: Date): Activity[] {
     const dateCompletions = getCompletionsForDate(date);
     const completedActivityIds = new Set(dateCompletions.map(c => c.activity_id));
-    return activities.filter(a => !completedActivityIds.has(a.id));
+    return flatActivities.filter(a => !completedActivityIds.has(a.id));
   }
 
   function openDetail(detail: CompletionDetail) {
@@ -277,8 +303,88 @@ export default function Calendar() {
   }
 
   function renderDayView() {
-    const completedDetails = getCompletedActivitiesForDate(currentDate);
-    const uncompletedActivities = getUncompletedActivitiesForDate(currentDate);
+    const dateCompletions = getCompletionsForDate(currentDate);
+    const completedActivityIds = new Set(dateCompletions.map(c => c.activity_id));
+    
+    // Helper function to render activity item with hierarchical structure
+    function ActivityItem({ 
+      activity, 
+      depth = 0 
+    }: { 
+      activity: Activity; 
+      depth?: number;
+    }) {
+      const isCompleted = completedActivityIds.has(activity.id);
+      const completionRecord = dateCompletions.find(c => c.activity_id === activity.id);
+      const hasChildren = activity.children && activity.children.length > 0;
+      
+      return (
+        <div className="space-y-1">
+          <div
+            className={cn(
+              "flex items-center justify-between p-3 rounded-lg border transition-colors",
+              isCompleted 
+                ? "bg-neon-green/10 border-neon-green/30" 
+                : "bg-muted/30 border-border hover:bg-muted/50 cursor-pointer"
+            )}
+            style={{ marginLeft: `${depth * 24}px` }}
+            onClick={() => !isCompleted && openCompleteDialog(activity, currentDate)}
+          >
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              {depth > 0 && (
+                <span className="text-muted-foreground text-sm shrink-0">↳</span>
+              )}
+              <span className={cn(
+                "truncate",
+                isCompleted ? "text-neon-green" : "text-foreground"
+              )}>
+                {activity.title}
+              </span>
+              {depth > 0 && (
+                <Badge variant="outline" className="text-xs shrink-0">sub</Badge>
+              )}
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {isCompleted && completionRecord && (
+                <>
+                  <span className="text-xs text-muted-foreground">
+                    {format(new Date(completionRecord.completed_at), 'HH:mm')}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openEditDialog(completionRecord, activity);
+                    }}
+                  >
+                    <Edit2 className="h-4 w-4" />
+                  </Button>
+                  <Check className="h-5 w-5 text-neon-green" />
+                </>
+              )}
+              {!isCompleted && (
+                <span className="text-xs text-muted-foreground">Klik untuk selesaikan</span>
+              )}
+            </div>
+          </div>
+          
+          {/* Render children */}
+          {hasChildren && activity.children!.map(child => (
+            <ActivityItem 
+              key={child.id} 
+              activity={child} 
+              depth={depth + 1}
+            />
+          ))}
+        </div>
+      );
+    }
+    
+    // Count completed and uncompleted
+    const totalActivities = flatActivities.length;
+    const completedCount = flatActivities.filter(a => completedActivityIds.has(a.id)).length;
+    const uncompletedCount = totalActivities - completedCount;
     
     return (
       <div className="space-y-6">
@@ -286,88 +392,32 @@ export default function Calendar() {
           {format(currentDate, 'EEEE, d MMMM yyyy', { locale: localeId })}
         </h2>
         
-        {/* Completed Activities */}
-        {completedDetails.length > 0 && (
-          <div className="space-y-3">
-            <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+        {/* Summary badges */}
+        {totalActivities > 0 && (
+          <div className="flex items-center justify-center gap-4">
+            <div className="flex items-center gap-2">
               <Check className="h-4 w-4 text-neon-green" />
-              Selesai ({completedDetails.length})
-            </h3>
-            {completedDetails.map(detail => {
-              const isSubActivity = !!detail.activity.parent_id;
-              
-              return (
-                <div 
-                  key={detail.activity.id}
-                  className={cn(
-                    "flex items-center justify-between p-4 rounded-lg border bg-neon-green/10 border-neon-green/30",
-                    isSubActivity && "ml-6"
-                  )}
-                >
-                  <div className="flex items-center gap-2 min-w-0 flex-1">
-                    {isSubActivity && (
-                      <span className="text-muted-foreground text-sm shrink-0">↳</span>
-                    )}
-                    <span className="text-neon-green truncate">{detail.activity.title}</span>
-                    {isSubActivity && (
-                      <Badge variant="outline" className="text-xs shrink-0">sub</Badge>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-xs text-muted-foreground">
-                      {format(new Date(detail.completions[0].completed_at), 'HH:mm')}
-                    </span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => openEditDialog(detail.completions[0], detail.activity)}
-                    >
-                      <Edit2 className="h-4 w-4" />
-                    </Button>
-                    <Check className="h-5 w-5 text-neon-green" />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Uncompleted Activities */}
-        {uncompletedActivities.length > 0 && (
-          <div className="space-y-3">
-            <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">
+                Selesai: <span className="font-medium text-neon-green">{completedCount}</span>
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
               <Circle className="h-4 w-4" />
-              Belum Selesai ({uncompletedActivities.length})
-            </h3>
-            {uncompletedActivities.map(activity => {
-              const isSubActivity = !!activity.parent_id;
-              
-              return (
-                <div 
-                  key={activity.id}
-                  onClick={() => openCompleteDialog(activity, currentDate)}
-                  className={cn(
-                    "flex items-center justify-between p-4 rounded-lg border bg-muted/30 border-border cursor-pointer hover:bg-muted/50 transition-colors",
-                    isSubActivity && "ml-6"
-                  )}
-                >
-                  <div className="flex items-center gap-2 min-w-0 flex-1">
-                    {isSubActivity && (
-                      <span className="text-muted-foreground text-sm shrink-0">↳</span>
-                    )}
-                    <span className="text-muted-foreground truncate">{activity.title}</span>
-                    {isSubActivity && (
-                      <Badge variant="outline" className="text-xs shrink-0">sub</Badge>
-                    )}
-                  </div>
-                  <span className="text-xs text-muted-foreground shrink-0">Klik untuk selesaikan</span>
-                </div>
-              );
-            })}
+              <span className="text-sm text-muted-foreground">
+                Belum: <span className="font-medium">{uncompletedCount}</span>
+              </span>
+            </div>
           </div>
         )}
         
-        {activities.length === 0 && (
+        {/* Activities with hierarchical structure */}
+        <div className="space-y-2">
+          {nestedActivities.map(activity => (
+            <ActivityItem key={activity.id} activity={activity} />
+          ))}
+        </div>
+        
+        {flatActivities.length === 0 && (
           <p className="text-center text-muted-foreground py-8">
             Belum ada aktivitas
           </p>
