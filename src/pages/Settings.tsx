@@ -1,11 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
+import { useUserRole } from '@/hooks/useUserRole';
+import { useDataExport } from '@/hooks/useDataExport';
 import { supabase } from '@/integrations/supabase/client';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { usePWAUpdate } from '@/hooks/usePWAUpdate';
 import { 
@@ -19,11 +22,16 @@ import {
   Sun,
   RefreshCw,
   Download,
-  Smartphone
+  Smartphone,
+  Shield,
+  Database,
+  FileJson
 } from 'lucide-react';
 
 export default function Settings() {
   const { user } = useAuth();
+  const { role, isAdmin, loading: roleLoading } = useUserRole();
+  const { exportUserData, exportAllUsersData, downloadAsJson, exporting } = useDataExport();
   const { toast } = useToast();
   const { 
     needRefresh, 
@@ -185,13 +193,98 @@ export default function Settings() {
     toast({ title: 'Tema diperbarui!', description: 'Warna tema berhasil diubah' });
   }
 
+  async function handleExportMyData() {
+    const data = await exportUserData();
+    if (data) {
+      const timestamp = new Date().toISOString().split('T')[0];
+      downloadAsJson(data, `aktivitas-ku-data-${timestamp}.json`);
+    }
+  }
+
+  async function handleExportAllData() {
+    const data = await exportAllUsersData();
+    if (data) {
+      const timestamp = new Date().toISOString().split('T')[0];
+      downloadAsJson(data, `aktivitas-ku-backup-all-${timestamp}.json`);
+    }
+  }
+
   return (
     <AppLayout>
       <div className="max-w-2xl mx-auto space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Pengaturan</h1>
-          <p className="text-muted-foreground">Kelola akun dan preferensimu</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">Pengaturan</h1>
+            <p className="text-muted-foreground">Kelola akun dan preferensimu</p>
+          </div>
+          {!roleLoading && role && (
+            <Badge 
+              variant={isAdmin ? 'default' : 'secondary'}
+              className={isAdmin ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white' : ''}
+            >
+              <Shield className="h-3 w-3 mr-1" />
+              {isAdmin ? 'Admin' : 'User'}
+            </Badge>
+          )}
         </div>
+
+        {/* Data Export Section */}
+        <Card className="glass border-border/50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Database className="h-5 w-5 text-primary" />
+              Export Data
+            </CardTitle>
+            <CardDescription>
+              Download data kamu dalam format JSON
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Button
+                variant="outline"
+                onClick={handleExportMyData}
+                disabled={exporting}
+                className="flex-1"
+              >
+                {exporting ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <FileJson className="h-4 w-4 mr-2" />
+                )}
+                Export Data Saya
+              </Button>
+              
+              {isAdmin && (
+                <Button
+                  onClick={handleExportAllData}
+                  disabled={exporting}
+                  className="flex-1 gradient-primary"
+                >
+                  {exporting ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  ) : (
+                    <Download className="h-4 w-4 mr-2" />
+                  )}
+                  Backup Semua User
+                </Button>
+              )}
+            </div>
+
+            <div className="text-xs text-muted-foreground space-y-1 p-3 rounded bg-muted/30">
+              <p>📦 Data yang termasuk:</p>
+              <ul className="list-disc list-inside space-y-0.5 ml-2">
+                <li>Aktivitas & Kategori</li>
+                <li>Catatan</li>
+                <li>Transaksi & Anggaran</li>
+                <li>Doa & Nasehat</li>
+                <li>Sesi Pomodoro</li>
+                <li>Pengingat</li>
+                <li>Profil</li>
+              </ul>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* App Update Settings */}
         <Card className="glass border-border/50">
