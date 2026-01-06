@@ -39,7 +39,7 @@ import { useState, useEffect } from 'react';
 
 // Grouped navigation items
 const activityItems = [
-  { icon: LayoutDashboard, label: 'Dashboard', href: '/' },
+  { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard' },
   { icon: ListTodo, label: 'Aktivitas', href: '/activities' },
   { icon: Calendar, label: 'Kalender', href: '/calendar' },
   { icon: Timer, label: 'Focus Timer', href: '/pomodoro' },
@@ -86,7 +86,7 @@ export function Sidebar() {
     <div className="flex h-full flex-col">
       {/* Header */}
       <div className="flex h-16 items-center justify-between border-b border-border/50 px-4">
-        <Link to="/" className="flex items-center gap-3" onClick={() => isMobile && setMobileOpen(false)}>
+        <Link to="/dashboard" className="flex items-center gap-3" onClick={() => isMobile && setMobileOpen(false)}>
           <div className="p-2 rounded-lg gradient-primary glow-primary">
             <CheckSquare className="w-5 h-5 text-primary-foreground" />
           </div>
@@ -331,7 +331,7 @@ export function Sidebar() {
     <>
       {/* Mobile Header */}
       <div className="md:hidden fixed top-0 left-0 right-0 z-50 h-14 bg-background/95 backdrop-blur border-b border-border/50 flex items-center justify-between px-4">
-        <Link to="/" className="flex items-center gap-2">
+        <Link to="/dashboard" className="flex items-center gap-2">
           <div className="p-1.5 rounded-lg gradient-primary">
             <CheckSquare className="w-4 h-4 text-primary-foreground" />
           </div>
