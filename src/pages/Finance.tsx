@@ -20,11 +20,16 @@ import {
   Calendar,
   Trash2,
   Edit,
-  Target
+  Target,
+  Download,
+  MessageCircle,
+  Tag,
+  Phone
 } from "lucide-react";
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfDay, endOfDay, parseISO } from "date-fns";
 import { id } from "date-fns/locale";
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from "recharts";
+import * as XLSX from "xlsx";
 
 interface TransactionCategory {
   id: string;
@@ -81,7 +86,10 @@ export default function Finance() {
   
   const [showAddTransaction, setShowAddTransaction] = useState(false);
   const [showAddBudget, setShowAddBudget] = useState(false);
+  const [showAddCategory, setShowAddCategory] = useState(false);
+  const [showExportDialog, setShowExportDialog] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [editingCategory, setEditingCategory] = useState<TransactionCategory | null>(null);
   
   const [newTransaction, setNewTransaction] = useState({
     type: "expense" as "income" | "expense",
@@ -96,6 +104,14 @@ export default function Finance() {
     amount: "",
     period: "monthly" as "daily" | "weekly" | "monthly",
   });
+
+  const [newCategory, setNewCategory] = useState({
+    name: "",
+    type: "expense" as "income" | "expense",
+    color: "#6366f1",
+  });
+
+  const [exportWhatsappNumber, setExportWhatsappNumber] = useState("");
 
   const [statPeriod, setStatPeriod] = useState<StatPeriod>("monthly");
 
@@ -342,7 +358,190 @@ export default function Finance() {
     setShowAddTransaction(true);
   };
 
-  // Calculate statistics
+  // Category management
+  const handleAddCategory = async () => {
+    if (!user || !newCategory.name.trim()) {
+      toast({
+        title: "Error",
+        description: "Mohon masukkan nama kategori",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const { error } = await supabase.from("transaction_categories").insert({
+        user_id: user.id,
+        name: newCategory.name.trim(),
+        type: newCategory.type,
+        color: newCategory.color,
+      });
+
+      if (error) throw error;
+
+      toast({ title: "Kategori berhasil ditambahkan" });
+      setShowAddCategory(false);
+      setNewCategory({ name: "", type: "expense", color: "#6366f1" });
+      fetchData();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleUpdateCategory = async () => {
+    if (!editingCategory || !newCategory.name.trim()) return;
+
+    try {
+      const { error } = await supabase
+        .from("transaction_categories")
+        .update({
+          name: newCategory.name.trim(),
+          type: newCategory.type,
+          color: newCategory.color,
+        })
+        .eq("id", editingCategory.id);
+
+      if (error) throw error;
+
+      toast({ title: "Kategori berhasil diperbarui" });
+      setEditingCategory(null);
+      setShowAddCategory(false);
+      setNewCategory({ name: "", type: "expense", color: "#6366f1" });
+      fetchData();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDeleteCategory = async (categoryId: string) => {
+    try {
+      // Check if category is used in transactions
+      const { count } = await supabase
+        .from("transactions")
+        .select("id", { count: "exact" })
+        .eq("category_id", categoryId);
+
+      if (count && count > 0) {
+        toast({
+          title: "Tidak dapat menghapus",
+          description: "Kategori masih digunakan oleh transaksi",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const { error } = await supabase.from("transaction_categories").delete().eq("id", categoryId);
+      if (error) throw error;
+      toast({ title: "Kategori dihapus" });
+      fetchData();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const openEditCategory = (cat: TransactionCategory) => {
+    setEditingCategory(cat);
+    setNewCategory({
+      name: cat.name,
+      type: cat.type,
+      color: cat.color,
+    });
+    setShowAddCategory(true);
+  };
+
+  // Export functions
+  const handleExportExcel = () => {
+    const data = filteredTransactions.map((t) => ({
+      Tanggal: format(parseISO(t.transaction_date), "dd/MM/yyyy"),
+      Tipe: t.type === "income" ? "Pemasukan" : "Pengeluaran",
+      Kategori: t.category?.name || "Tidak berkategori",
+      Jumlah: t.amount,
+      Deskripsi: t.description || "-",
+    }));
+
+    // Add summary
+    const summary = [
+      {},
+      { Tanggal: "RINGKASAN" },
+      { Tanggal: "Total Pemasukan", Jumlah: totalIncome },
+      { Tanggal: "Total Pengeluaran", Jumlah: totalExpense },
+      { Tanggal: "Saldo", Jumlah: balance },
+    ];
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet([...data, ...summary]);
+    XLSX.utils.book_append_sheet(wb, ws, "Laporan Keuangan");
+    XLSX.writeFile(wb, `Laporan_Keuangan_${periodLabel[statPeriod]}_${format(new Date(), "yyyyMMdd")}.xlsx`);
+    
+    toast({ title: "File Excel berhasil diunduh" });
+  };
+
+  const generateWhatsappReport = () => {
+    let report = `📊 *LAPORAN KEUANGAN*\n`;
+    report += `📅 Periode: ${periodLabel[statPeriod]}\n`;
+    report += `📆 Tanggal: ${format(new Date(), "dd MMMM yyyy", { locale: id })}\n\n`;
+    
+    report += `💰 *RINGKASAN*\n`;
+    report += `┌─────────────────────\n`;
+    report += `│ 📈 Pemasukan: ${formatCurrency(totalIncome)}\n`;
+    report += `│ 📉 Pengeluaran: ${formatCurrency(totalExpense)}\n`;
+    report += `│ 💵 Saldo: ${formatCurrency(balance)}\n`;
+    report += `└─────────────────────\n\n`;
+
+    if (filteredTransactions.length > 0) {
+      report += `📋 *DETAIL TRANSAKSI*\n`;
+      filteredTransactions.slice(0, 20).forEach((t, i) => {
+        const icon = t.type === "income" ? "🟢" : "🔴";
+        report += `${icon} ${t.category?.name || "Lainnya"}: ${t.type === "income" ? "+" : "-"}${formatCurrency(t.amount)}\n`;
+        if (t.description) report += `   └ ${t.description}\n`;
+      });
+      if (filteredTransactions.length > 20) {
+        report += `\n... dan ${filteredTransactions.length - 20} transaksi lainnya\n`;
+      }
+    }
+
+    report += `\n_Dikirim dari Aktivitas-Ku_`;
+    return report;
+  };
+
+  const handleSendWhatsapp = () => {
+    if (!exportWhatsappNumber.trim()) {
+      toast({
+        title: "Error",
+        description: "Mohon masukkan nomor WhatsApp",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Clean phone number
+    let phone = exportWhatsappNumber.trim().replace(/\D/g, "");
+    if (phone.startsWith("0")) {
+      phone = "62" + phone.substring(1);
+    } else if (!phone.startsWith("62")) {
+      phone = "62" + phone;
+    }
+
+    const report = generateWhatsappReport();
+    const encodedReport = encodeURIComponent(report);
+    const whatsappUrl = `https://wa.me/${phone}?text=${encodedReport}`;
+    
+    window.open(whatsappUrl, "_blank");
+    setShowExportDialog(false);
+    toast({ title: "Membuka WhatsApp..." });
+  };
   const getDateRange = (period: StatPeriod) => {
     const now = new Date();
     switch (period) {
@@ -436,9 +635,9 @@ export default function Finance() {
 
   return (
     <div className="container mx-auto p-4 space-y-6 max-w-6xl">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-2xl font-bold">Keuangan</h1>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <Dialog open={showAddBudget} onOpenChange={setShowAddBudget}>
             <DialogTrigger asChild>
               <Button variant="outline" size="sm">
@@ -606,6 +805,124 @@ export default function Finance() {
               </div>
             </DialogContent>
           </Dialog>
+
+          {/* Add Category Dialog */}
+          <Dialog open={showAddCategory} onOpenChange={(open) => {
+            setShowAddCategory(open);
+            if (!open) {
+              setEditingCategory(null);
+              setNewCategory({ name: "", type: "expense", color: "#6366f1" });
+            }
+          }}>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm">
+                <Tag className="h-4 w-4 mr-2" />
+                Kategori
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>
+                  {editingCategory ? "Edit Kategori" : "Tambah Kategori"}
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label>Nama Kategori</Label>
+                  <Input
+                    placeholder="Nama kategori"
+                    value={newCategory.name}
+                    onChange={(e) => setNewCategory({ ...newCategory, name: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label>Tipe</Label>
+                  <Select
+                    value={newCategory.type}
+                    onValueChange={(v: "income" | "expense") =>
+                      setNewCategory({ ...newCategory, type: v })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="income">Pemasukan</SelectItem>
+                      <SelectItem value="expense">Pengeluaran</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Warna</Label>
+                  <div className="flex gap-2 items-center">
+                    <Input
+                      type="color"
+                      value={newCategory.color}
+                      onChange={(e) => setNewCategory({ ...newCategory, color: e.target.value })}
+                      className="w-16 h-10 p-1"
+                    />
+                    <span className="text-sm text-muted-foreground">{newCategory.color}</span>
+                  </div>
+                </div>
+                <Button
+                  onClick={editingCategory ? handleUpdateCategory : handleAddCategory}
+                  className="w-full"
+                >
+                  {editingCategory ? "Simpan Perubahan" : "Tambah Kategori"}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* Export Dialog */}
+          <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm">
+                <Download className="h-4 w-4 mr-2" />
+                Ekspor
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Ekspor Laporan Keuangan</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Periode: {periodLabel[statPeriod]} | {filteredTransactions.length} transaksi
+                </p>
+                
+                <Button onClick={handleExportExcel} className="w-full" variant="outline">
+                  <Download className="h-4 w-4 mr-2" />
+                  Download Excel (.xlsx)
+                </Button>
+
+                <div className="border-t pt-4">
+                  <Label className="flex items-center gap-2 mb-2">
+                    <MessageCircle className="h-4 w-4" />
+                    Kirim ke WhatsApp
+                  </Label>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="08123456789"
+                        value={exportWhatsappNumber}
+                        onChange={(e) => setExportWhatsappNumber(e.target.value)}
+                        className="pl-10"
+                      />
+                    </div>
+                    <Button onClick={handleSendWhatsapp}>
+                      <MessageCircle className="h-4 w-4 mr-2" />
+                      Kirim
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Masukkan nomor tanpa tanda + atau spasi
+                  </p>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
@@ -671,6 +988,7 @@ export default function Finance() {
           <TabsTrigger value="transactions">Transaksi</TabsTrigger>
           <TabsTrigger value="statistics">Statistik</TabsTrigger>
           <TabsTrigger value="budgets">Budget</TabsTrigger>
+          <TabsTrigger value="categories">Kategori</TabsTrigger>
         </TabsList>
 
         <TabsContent value="transactions" className="space-y-4">
@@ -885,6 +1203,80 @@ export default function Finance() {
               })}
             </div>
           )}
+        </TabsContent>
+
+        <TabsContent value="categories" className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Income Categories */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5 text-green-600" />
+                  Kategori Pemasukan
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {categories.filter(c => c.type === "income").length === 0 ? (
+                  <p className="text-center text-muted-foreground py-4">Belum ada kategori</p>
+                ) : (
+                  categories.filter(c => c.type === "income").map((cat) => (
+                    <div key={cat.id} className="flex items-center justify-between p-2 rounded-lg border">
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="w-4 h-4 rounded-full"
+                          style={{ backgroundColor: cat.color }}
+                        />
+                        <span>{cat.name}</span>
+                      </div>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => openEditCategory(cat)}>
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleDeleteCategory(cat.id)}>
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Expense Categories */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <TrendingDown className="h-5 w-5 text-red-600" />
+                  Kategori Pengeluaran
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {categories.filter(c => c.type === "expense").length === 0 ? (
+                  <p className="text-center text-muted-foreground py-4">Belum ada kategori</p>
+                ) : (
+                  categories.filter(c => c.type === "expense").map((cat) => (
+                    <div key={cat.id} className="flex items-center justify-between p-2 rounded-lg border">
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="w-4 h-4 rounded-full"
+                          style={{ backgroundColor: cat.color }}
+                        />
+                        <span>{cat.name}</span>
+                      </div>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => openEditCategory(cat)}>
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleDeleteCategory(cat.id)}>
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
     </div>
