@@ -15,6 +15,7 @@ import Settings from "./pages/Settings";
 import Finance from "./pages/Finance";
 import Notes from "./pages/Notes";
 import PrayersAdvices from "./pages/PrayersAdvices";
+import AdminPanel from "./pages/AdminPanel";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -77,6 +78,7 @@ const AppRoutes = () => {
       <Route path="/finance" element={<ProtectedRoute><Finance /></ProtectedRoute>} />
       <Route path="/notes" element={<ProtectedRoute><Notes /></ProtectedRoute>} />
       <Route path="/prayers-advices" element={<ProtectedRoute><PrayersAdvices /></ProtectedRoute>} />
+      <Route path="/admin" element={<ProtectedRoute><AdminPanel /></ProtectedRoute>} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   );
