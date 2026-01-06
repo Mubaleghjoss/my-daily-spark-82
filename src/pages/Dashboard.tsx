@@ -13,15 +13,24 @@ import {
   Plus,
   Target,
   TrendingUp,
+  TrendingDown,
+  Wallet,
   Zap,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { startOfMonth, endOfMonth, format } from 'date-fns';
 
 interface DashboardStats {
   totalActivities: number;
   completedToday: number;
   inProgress: number;
   pomodoroSessions: number;
+}
+
+interface FinanceStats {
+  income: number;
+  expense: number;
+  balance: number;
 }
 
 export default function Dashboard() {
@@ -32,6 +41,11 @@ export default function Dashboard() {
     inProgress: 0,
     pomodoroSessions: 0,
   });
+  const [financeStats, setFinanceStats] = useState<FinanceStats>({
+    income: 0,
+    expense: 0,
+    balance: 0,
+  });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -39,12 +53,15 @@ export default function Dashboard() {
       if (!user) return;
 
       const today = new Date().toISOString().split('T')[0];
+      const monthStart = format(startOfMonth(new Date()), 'yyyy-MM-dd');
+      const monthEnd = format(endOfMonth(new Date()), 'yyyy-MM-dd');
 
-      const [activitiesRes, completedRes, progressRes, pomodoroRes] = await Promise.all([
+      const [activitiesRes, completedRes, progressRes, pomodoroRes, transactionsRes] = await Promise.all([
         supabase.from('activities').select('id', { count: 'exact' }).eq('user_id', user.id),
         supabase.from('activities').select('id', { count: 'exact' }).eq('user_id', user.id).eq('status', 'done').gte('updated_at', today),
         supabase.from('activities').select('id', { count: 'exact' }).eq('user_id', user.id).eq('status', 'in_progress'),
         supabase.from('pomodoro_sessions').select('id', { count: 'exact' }).eq('user_id', user.id).gte('completed_at', today),
+        supabase.from('transactions').select('type, amount').eq('user_id', user.id).gte('transaction_date', monthStart).lte('transaction_date', monthEnd),
       ]);
 
       setStats({
@@ -53,11 +70,30 @@ export default function Dashboard() {
         inProgress: progressRes.count || 0,
         pomodoroSessions: pomodoroRes.count || 0,
       });
+
+      // Calculate finance stats
+      const transactions = transactionsRes.data || [];
+      const income = transactions.filter(t => t.type === 'income').reduce((sum, t) => sum + Number(t.amount), 0);
+      const expense = transactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + Number(t.amount), 0);
+      setFinanceStats({
+        income,
+        expense,
+        balance: income - expense,
+      });
+
       setLoading(false);
     }
 
     fetchStats();
   }, [user]);
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat("id-ID", {
+      style: "currency",
+      currency: "IDR",
+      minimumFractionDigits: 0,
+    }).format(amount);
+  };
 
   const greeting = () => {
     const hour = new Date().getHours();
@@ -151,6 +187,40 @@ export default function Dashboard() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Finance Summary */}
+        <Card className="glass border-border/50">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <Wallet className="w-5 h-5 text-primary" />
+                Ringkasan Keuangan Bulan Ini
+              </span>
+              <Button asChild variant="ghost" size="sm">
+                <Link to="/finance">Lihat Detail →</Link>
+              </Button>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="text-center p-3 rounded-lg bg-green-500/10">
+                <TrendingUp className="h-5 w-5 mx-auto text-green-500 mb-1" />
+                <p className="text-xs text-muted-foreground">Pemasukan</p>
+                <p className="text-lg font-bold text-green-500">{formatCurrency(financeStats.income)}</p>
+              </div>
+              <div className="text-center p-3 rounded-lg bg-red-500/10">
+                <TrendingDown className="h-5 w-5 mx-auto text-red-500 mb-1" />
+                <p className="text-xs text-muted-foreground">Pengeluaran</p>
+                <p className="text-lg font-bold text-red-500">{formatCurrency(financeStats.expense)}</p>
+              </div>
+              <div className={`text-center p-3 rounded-lg ${financeStats.balance >= 0 ? 'bg-blue-500/10' : 'bg-red-500/10'}`}>
+                <Wallet className={`h-5 w-5 mx-auto mb-1 ${financeStats.balance >= 0 ? 'text-blue-500' : 'text-red-500'}`} />
+                <p className="text-xs text-muted-foreground">Saldo</p>
+                <p className={`text-lg font-bold ${financeStats.balance >= 0 ? 'text-blue-500' : 'text-red-500'}`}>{formatCurrency(financeStats.balance)}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Quick Actions */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
