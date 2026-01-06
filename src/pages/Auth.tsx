@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,8 +7,9 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, CheckSquare, Zap } from 'lucide-react';
+import { Loader2, CheckSquare, Zap, ArrowLeft } from 'lucide-react';
 import { z } from 'zod';
+import { PremiumDialog } from '@/components/PremiumDialog';
 
 const emailSchema = z.string().email('Email tidak valid');
 const passwordSchema = z.string().min(6, 'Password minimal 6 karakter');
@@ -18,16 +19,29 @@ export default function Auth() {
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [showPremiumDialog, setShowPremiumDialog] = useState(false);
 
   const { user, signInWithEmail, signUpWithEmail } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { toast } = useToast();
+
+  const planFromUrl = searchParams.get('plan');
 
   useEffect(() => {
     if (user) {
-      navigate('/');
+      // If there's a plan parameter, show premium dialog after redirect
+      if (planFromUrl && planFromUrl !== 'free') {
+        navigate('/dashboard');
+        // Small delay to ensure navigation completes
+        setTimeout(() => {
+          setShowPremiumDialog(true);
+        }, 500);
+      } else {
+        navigate('/dashboard');
+      }
     }
-  }, [user, navigate]);
+  }, [user, navigate, planFromUrl]);
 
   const validateInputs = () => {
     try {
@@ -110,6 +124,15 @@ export default function Auth() {
       </div>
 
       <div className="w-full max-w-md relative z-10">
+        {/* Back to Landing */}
+        <Link 
+          to="/" 
+          className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-6"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span>Kembali ke Beranda</span>
+        </Link>
+
         {/* Logo */}
         <div className="flex items-center justify-center gap-3 mb-8">
           <div className="p-3 rounded-xl gradient-primary glow-primary">
@@ -117,6 +140,16 @@ export default function Auth() {
           </div>
           <h1 className="text-3xl font-bold gradient-text">Aktivitas-Ku</h1>
         </div>
+
+        {/* Plan indicator */}
+        {planFromUrl && planFromUrl !== 'free' && (
+          <div className="text-center mb-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30">
+            <p className="text-sm text-amber-500">
+              Anda memilih paket <strong className="capitalize">{planFromUrl}</strong>. 
+              Silakan daftar terlebih dahulu.
+            </p>
+          </div>
+        )}
 
         <Card className="glass border-border/50">
           <CardHeader className="text-center">
@@ -231,6 +264,11 @@ export default function Auth() {
           Dengan melanjutkan, kamu menyetujui ketentuan layanan kami
         </p>
       </div>
+
+      <PremiumDialog 
+        open={showPremiumDialog} 
+        onOpenChange={setShowPremiumDialog}
+      />
     </div>
   );
 }
