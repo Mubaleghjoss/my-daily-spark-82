@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
-import { Plus, GripVertical, Pencil, Trash2, StickyNote, Clock, CheckCircle2 } from 'lucide-react';
+import { Plus, GripVertical, Pencil, Trash2, StickyNote, Clock, CheckCircle2, Calendar, FileText } from 'lucide-react';
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 
@@ -51,6 +51,7 @@ export default function Notes() {
   const [loading, setLoading] = useState(true);
   const [showAddNote, setShowAddNote] = useState(false);
   const [editingNote, setEditingNote] = useState<Note | null>(null);
+  const [viewingNote, setViewingNote] = useState<Note | null>(null);
   const [newNote, setNewNote] = useState({ title: '', content: '' });
   const [draggedNote, setDraggedNote] = useState<Note | null>(null);
 
@@ -264,7 +265,8 @@ export default function Notes() {
                       key={note.id}
                       draggable
                       onDragStart={(e) => handleDragStart(e, note)}
-                      className={`cursor-grab active:cursor-grabbing transition-all hover:shadow-md ${
+                      onClick={() => setViewingNote(note)}
+                      className={`cursor-grab active:cursor-grabbing transition-all hover:shadow-md hover:border-primary/50 ${
                         draggedNote?.id === note.id ? 'opacity-50 scale-95' : ''
                       }`}
                     >
@@ -282,7 +284,7 @@ export default function Notes() {
                               {format(new Date(note.updated_at), 'dd MMM yyyy, HH:mm', { locale: id })}
                             </p>
                           </div>
-                          <div className="flex gap-1">
+                          <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
                             <Button
                               variant="ghost"
                               size="icon"
@@ -316,6 +318,69 @@ export default function Notes() {
           })}
         </div>
       </div>
+
+      {/* View Note Dialog */}
+      <Dialog open={!!viewingNote} onOpenChange={() => setViewingNote(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <FileText className="w-5 h-5 text-primary" />
+              Detail Catatan
+            </DialogTitle>
+          </DialogHeader>
+          {viewingNote && (
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Judul</label>
+                <h3 className="text-lg font-semibold mt-1">{viewingNote.title}</h3>
+              </div>
+              
+              <div>
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Deskripsi</label>
+                <p className="mt-1 text-sm text-foreground whitespace-pre-wrap">
+                  {viewingNote.content || <span className="italic text-muted-foreground">Tidak ada deskripsi</span>}
+                </p>
+              </div>
+              
+              <div className="flex flex-col sm:flex-row gap-4 pt-2 border-t">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Calendar className="w-4 h-4" />
+                  <span>Dibuat: {format(new Date(viewingNote.created_at), 'dd MMMM yyyy, HH:mm', { locale: id })}</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Clock className="w-4 h-4" />
+                  <span>Diperbarui: {format(new Date(viewingNote.updated_at), 'dd MMMM yyyy, HH:mm', { locale: id })}</span>
+                </div>
+              </div>
+              
+              <div className="flex gap-2 pt-2">
+                <Button 
+                  variant="outline" 
+                  className="flex-1"
+                  onClick={() => {
+                    setViewingNote(null);
+                    setEditingNote(viewingNote);
+                  }}
+                >
+                  <Pencil className="w-4 h-4 mr-2" />
+                  Edit
+                </Button>
+                <Button 
+                  variant="destructive" 
+                  className="flex-1"
+                  onClick={() => {
+                    handleDeleteNote(viewingNote.id);
+                    setViewingNote(null);
+                  }}
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Hapus
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Edit Note Dialog */}
       <Dialog open={!!editingNote} onOpenChange={() => setEditingNote(null)}>
