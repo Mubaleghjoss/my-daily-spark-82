@@ -60,11 +60,20 @@ import {
   X
 } from 'lucide-react';
 
+type SubscriptionType = 'none' | 'monthly' | 'yearly' | 'lifetime';
+
+interface UserSubscription {
+  subscription_type: SubscriptionType;
+  is_active: boolean;
+  expires_at: string | null;
+}
+
 interface UserWithRole {
   user_id: string;
   display_name: string | null;
   role: AppRole;
   created_at: string;
+  subscription?: UserSubscription;
 }
 
 interface UserData {
@@ -83,6 +92,7 @@ export default function AdminPanel() {
   const [users, setUsers] = useState<UserWithRole[]>([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState<string | null>(null);
+  const [updatingSubscription, setUpdatingSubscription] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [deleteConfirmUser, setDeleteConfirmUser] = useState<UserWithRole | null>(null);
   
@@ -124,13 +134,25 @@ export default function AdminPanel() {
 
       if (rolesError) throw rolesError;
 
+      const { data: subscriptions, error: subscriptionsError } = await supabase
+        .from('user_subscriptions')
+        .select('user_id, subscription_type, is_active, expires_at');
+
+      if (subscriptionsError) throw subscriptionsError;
+
       const usersWithRoles: UserWithRole[] = (profiles || []).map(profile => {
         const userRole = roles?.find(r => r.user_id === profile.user_id);
+        const userSub = subscriptions?.find(s => s.user_id === profile.user_id);
         return {
           user_id: profile.user_id,
           display_name: profile.display_name,
           role: (userRole?.role as AppRole) || 'user',
-          created_at: profile.created_at
+          created_at: profile.created_at,
+          subscription: userSub ? {
+            subscription_type: userSub.subscription_type as SubscriptionType,
+            is_active: userSub.is_active,
+            expires_at: userSub.expires_at
+          } : undefined
         };
       });
 
@@ -188,6 +210,90 @@ export default function AdminPanel() {
       });
     } finally {
       setUpdating(null);
+    }
+  }
+
+  async function handleSubscriptionChange(userId: string, newType: SubscriptionType) {
+    setUpdatingSubscription(userId);
+    try {
+      let expiresAt: string | null = null;
+      const isActive = newType !== 'none';
+      const startedAt = isActive ? new Date().toISOString() : null;
+
+      if (newType === 'monthly') {
+        const date = new Date();
+        date.setMonth(date.getMonth() + 1);
+        expiresAt = date.toISOString();
+      } else if (newType === 'yearly') {
+        const date = new Date();
+        date.setFullYear(date.getFullYear() + 1);
+        expiresAt = date.toISOString();
+      }
+
+      // Check if subscription exists
+      const { data: existing } = await supabase
+        .from('user_subscriptions')
+        .select('id')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (existing) {
+        const { error } = await supabase
+          .from('user_subscriptions')
+          .update({ 
+            subscription_type: newType,
+            is_active: isActive,
+            started_at: startedAt,
+            expires_at: expiresAt
+          })
+          .eq('user_id', userId);
+
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('user_subscriptions')
+          .insert({ 
+            user_id: userId, 
+            subscription_type: newType,
+            is_active: isActive,
+            started_at: startedAt,
+            expires_at: expiresAt
+          });
+
+        if (error) throw error;
+      }
+
+      setUsers(prev => prev.map(u => 
+        u.user_id === userId ? { 
+          ...u, 
+          subscription: { 
+            subscription_type: newType, 
+            is_active: isActive, 
+            expires_at: expiresAt 
+          } 
+        } : u
+      ));
+
+      const typeLabels: Record<SubscriptionType, string> = {
+        none: 'Gratis',
+        monthly: 'Bulanan',
+        yearly: 'Tahunan',
+        lifetime: 'Selamanya'
+      };
+
+      toast({
+        title: 'Berhasil!',
+        description: `Langganan berhasil diubah menjadi ${typeLabels[newType]}`
+      });
+    } catch (error) {
+      console.error('Error updating subscription:', error);
+      toast({
+        title: 'Error',
+        description: 'Gagal mengubah langganan',
+        variant: 'destructive'
+      });
+    } finally {
+      setUpdatingSubscription(null);
     }
   }
 
@@ -387,6 +493,7 @@ export default function AdminPanel() {
                     <TableRow>
                       <TableHead>User</TableHead>
                       <TableHead>Role</TableHead>
+                      <TableHead>Langganan</TableHead>
                       <TableHead>Bergabung</TableHead>
                       <TableHead className="text-right">Aksi</TableHead>
                     </TableRow>
@@ -426,6 +533,32 @@ export default function AdminPanel() {
                             )}
                             {user.role === 'admin' ? 'Admin' : 'User'}
                           </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Select
+                            value={user.subscription?.subscription_type || 'none'}
+                            onValueChange={(value) => handleSubscriptionChange(user.user_id, value as SubscriptionType)}
+                            disabled={updatingSubscription === user.user_id}
+                          >
+                            <SelectTrigger className="w-28">
+                              {updatingSubscription === user.user_id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <SelectValue />
+                              )}
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">Gratis</SelectItem>
+                              <SelectItem value="monthly">Bulanan</SelectItem>
+                              <SelectItem value="yearly">Tahunan</SelectItem>
+                              <SelectItem value="lifetime">Selamanya</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          {user.subscription?.expires_at && user.subscription.subscription_type !== 'lifetime' && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              s.d {formatDate(user.subscription.expires_at)}
+                            </p>
+                          )}
                         </TableCell>
                         <TableCell className="text-muted-foreground">
                           {formatDate(user.created_at)}
