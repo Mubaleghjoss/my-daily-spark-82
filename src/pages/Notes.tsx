@@ -1,14 +1,15 @@
 import { useState, useEffect } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
-import { Plus, GripVertical, Pencil, Trash2, StickyNote, Clock, CheckCircle2, Calendar, FileText } from 'lucide-react';
+import { Plus, GripVertical, Pencil, Trash2, StickyNote, Clock, CheckCircle2, Calendar, FileText, Search, Filter } from 'lucide-react';
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 
@@ -23,6 +24,7 @@ interface Note {
 }
 
 type NoteStatus = 'todo' | 'in_progress' | 'done';
+type FilterStatus = 'all' | NoteStatus;
 
 const statusConfig = {
   todo: {
@@ -54,6 +56,8 @@ export default function Notes() {
   const [viewingNote, setViewingNote] = useState<Note | null>(null);
   const [newNote, setNewNote] = useState({ title: '', content: '' });
   const [draggedNote, setDraggedNote] = useState<Note | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
 
   useEffect(() => {
     if (user) {
@@ -177,8 +181,17 @@ export default function Notes() {
     setDraggedNote(null);
   };
 
+  // Filter notes based on search and status
+  const filteredNotes = notes.filter(note => {
+    const matchesSearch = 
+      note.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (note.content?.toLowerCase().includes(searchQuery.toLowerCase()));
+    const matchesStatus = filterStatus === 'all' || note.status === filterStatus;
+    return matchesSearch && matchesStatus;
+  });
+
   const getNotesByStatus = (status: NoteStatus) => 
-    notes.filter(note => note.status === status).sort((a, b) => a.sort_order - b.sort_order);
+    filteredNotes.filter(note => note.status === status).sort((a, b) => a.sort_order - b.sort_order);
 
   if (loading) {
     return (
@@ -229,6 +242,31 @@ export default function Notes() {
               </div>
             </DialogContent>
           </Dialog>
+        </div>
+
+        {/* Search & Filter */}
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Cari catatan..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+          <Select value={filterStatus} onValueChange={(value: FilterStatus) => setFilterStatus(value)}>
+            <SelectTrigger className="w-full sm:w-[160px]">
+              <Filter className="w-4 h-4 mr-2" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Semua Status</SelectItem>
+              <SelectItem value="todo">To Do</SelectItem>
+              <SelectItem value="in_progress">In Progress</SelectItem>
+              <SelectItem value="done">Done</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Kanban Board */}
