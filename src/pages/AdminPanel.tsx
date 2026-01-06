@@ -22,6 +22,24 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { 
   Shield, 
@@ -29,7 +47,17 @@ import {
   Loader2,
   Crown,
   User,
-  RefreshCw
+  RefreshCw,
+  Trash2,
+  Eye,
+  ListTodo,
+  StickyNote,
+  Wallet,
+  BookOpen,
+  Timer,
+  Calendar,
+  ArrowLeft,
+  X
 } from 'lucide-react';
 
 interface UserWithRole {
@@ -37,6 +65,14 @@ interface UserWithRole {
   display_name: string | null;
   role: AppRole;
   created_at: string;
+}
+
+interface UserData {
+  activities: any[];
+  notes: any[];
+  transactions: any[];
+  prayers_advices: any[];
+  pomodoro_sessions: any[];
 }
 
 export default function AdminPanel() {
@@ -47,6 +83,13 @@ export default function AdminPanel() {
   const [users, setUsers] = useState<UserWithRole[]>([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [deleteConfirmUser, setDeleteConfirmUser] = useState<UserWithRole | null>(null);
+  
+  // Preview state
+  const [previewUser, setPreviewUser] = useState<UserWithRole | null>(null);
+  const [previewData, setPreviewData] = useState<UserData | null>(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
 
   useEffect(() => {
     if (!roleLoading && !isAdmin) {
@@ -68,7 +111,6 @@ export default function AdminPanel() {
   async function fetchUsers() {
     setLoading(true);
     try {
-      // Fetch profiles
       const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
         .select('user_id, display_name, created_at')
@@ -76,14 +118,12 @@ export default function AdminPanel() {
 
       if (profilesError) throw profilesError;
 
-      // Fetch roles
       const { data: roles, error: rolesError } = await supabase
         .from('user_roles')
         .select('user_id, role');
 
       if (rolesError) throw rolesError;
 
-      // Merge data
       const usersWithRoles: UserWithRole[] = (profiles || []).map(profile => {
         const userRole = roles?.find(r => r.user_id === profile.user_id);
         return {
@@ -110,7 +150,6 @@ export default function AdminPanel() {
   async function handleRoleChange(userId: string, newRole: AppRole) {
     setUpdating(userId);
     try {
-      // Check if user already has a role entry
       const { data: existing } = await supabase
         .from('user_roles')
         .select('id')
@@ -118,7 +157,6 @@ export default function AdminPanel() {
         .maybeSingle();
 
       if (existing) {
-        // Update existing role
         const { error } = await supabase
           .from('user_roles')
           .update({ role: newRole })
@@ -126,7 +164,6 @@ export default function AdminPanel() {
 
         if (error) throw error;
       } else {
-        // Insert new role
         const { error } = await supabase
           .from('user_roles')
           .insert({ user_id: userId, role: newRole });
@@ -134,7 +171,6 @@ export default function AdminPanel() {
         if (error) throw error;
       }
 
-      // Update local state
       setUsers(prev => prev.map(u => 
         u.user_id === userId ? { ...u, role: newRole } : u
       ));
@@ -155,6 +191,73 @@ export default function AdminPanel() {
     }
   }
 
+  async function handleDeleteUser() {
+    if (!deleteConfirmUser) return;
+    
+    setDeleting(deleteConfirmUser.user_id);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      
+      const response = await supabase.functions.invoke('delete-user', {
+        body: { userId: deleteConfirmUser.user_id }
+      });
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      setUsers(prev => prev.filter(u => u.user_id !== deleteConfirmUser.user_id));
+      
+      toast({
+        title: 'Berhasil!',
+        description: `User ${deleteConfirmUser.display_name || 'Unnamed'} berhasil dihapus`
+      });
+    } catch (error: any) {
+      console.error('Error deleting user:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'Gagal menghapus user',
+        variant: 'destructive'
+      });
+    } finally {
+      setDeleting(null);
+      setDeleteConfirmUser(null);
+    }
+  }
+
+  async function handlePreviewUser(user: UserWithRole) {
+    setPreviewUser(user);
+    setLoadingPreview(true);
+    
+    try {
+      // Fetch all user data - admin can see all via RLS policies
+      const [activities, notes, transactions, prayers_advices, pomodoro_sessions] = await Promise.all([
+        supabase.from('activities').select('*').eq('user_id', user.user_id).order('created_at', { ascending: false }),
+        supabase.from('notes').select('*').eq('user_id', user.user_id).order('created_at', { ascending: false }),
+        supabase.from('transactions').select('*, transaction_categories(name, color)').eq('user_id', user.user_id).order('transaction_date', { ascending: false }),
+        supabase.from('prayers_advices').select('*').eq('user_id', user.user_id).order('created_at', { ascending: false }),
+        supabase.from('pomodoro_sessions').select('*').eq('user_id', user.user_id).order('completed_at', { ascending: false }),
+      ]);
+
+      setPreviewData({
+        activities: activities.data || [],
+        notes: notes.data || [],
+        transactions: transactions.data || [],
+        prayers_advices: prayers_advices.data || [],
+        pomodoro_sessions: pomodoro_sessions.data || [],
+      });
+    } catch (error) {
+      console.error('Error fetching user data:', error);
+      toast({
+        title: 'Error',
+        description: 'Gagal memuat data user',
+        variant: 'destructive'
+      });
+    } finally {
+      setLoadingPreview(false);
+    }
+  }
+
   function getInitials(name: string | null): string {
     if (!name) return 'U';
     return name
@@ -163,6 +266,22 @@ export default function AdminPanel() {
       .join('')
       .toUpperCase()
       .slice(0, 2);
+  }
+
+  function formatDate(dateStr: string) {
+    return new Date(dateStr).toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric'
+    });
+  }
+
+  function formatCurrency(amount: number) {
+    return new Intl.NumberFormat('id-ID', {
+      style: 'currency',
+      currency: 'IDR',
+      minimumFractionDigits: 0
+    }).format(amount);
   }
 
   if (roleLoading) {
@@ -253,7 +372,7 @@ export default function AdminPanel() {
               Daftar User
             </CardTitle>
             <CardDescription>
-              Klik pada role untuk mengubahnya
+              Lihat data, ubah role, atau hapus user
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -309,40 +428,52 @@ export default function AdminPanel() {
                           </Badge>
                         </TableCell>
                         <TableCell className="text-muted-foreground">
-                          {new Date(user.created_at).toLocaleDateString('id-ID', {
-                            day: 'numeric',
-                            month: 'short',
-                            year: 'numeric'
-                          })}
+                          {formatDate(user.created_at)}
                         </TableCell>
-                        <TableCell className="text-right">
-                          <Select
-                            value={user.role}
-                            onValueChange={(value) => handleRoleChange(user.user_id, value as AppRole)}
-                            disabled={updating === user.user_id}
-                          >
-                            <SelectTrigger className="w-28">
-                              {updating === user.user_id ? (
+                        <TableCell>
+                          <div className="flex items-center justify-end gap-2">
+                            {/* Preview Button */}
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handlePreviewUser(user)}
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+
+                            {/* Role Select */}
+                            <Select
+                              value={user.role}
+                              onValueChange={(value) => handleRoleChange(user.user_id, value as AppRole)}
+                              disabled={updating === user.user_id}
+                            >
+                              <SelectTrigger className="w-24">
+                                {updating === user.user_id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <SelectValue />
+                                )}
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="admin">Admin</SelectItem>
+                                <SelectItem value="user">User</SelectItem>
+                              </SelectContent>
+                            </Select>
+
+                            {/* Delete Button */}
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => setDeleteConfirmUser(user)}
+                              disabled={deleting === user.user_id}
+                            >
+                              {deleting === user.user_id ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />
                               ) : (
-                                <SelectValue />
+                                <Trash2 className="h-4 w-4" />
                               )}
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="admin">
-                                <div className="flex items-center gap-2">
-                                  <Crown className="h-3 w-3 text-amber-500" />
-                                  Admin
-                                </div>
-                              </SelectItem>
-                              <SelectItem value="user">
-                                <div className="flex items-center gap-2">
-                                  <User className="h-3 w-3 text-blue-500" />
-                                  User
-                                </div>
-                              </SelectItem>
-                            </SelectContent>
-                          </Select>
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -353,6 +484,243 @@ export default function AdminPanel() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!deleteConfirmUser} onOpenChange={() => setDeleteConfirmUser(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="h-5 w-5" />
+              Hapus User?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Anda yakin ingin menghapus user <strong>{deleteConfirmUser?.display_name || 'Unnamed'}</strong>?
+              <br /><br />
+              <span className="text-destructive font-medium">
+                ⚠️ Semua data user ini akan dihapus permanen termasuk aktivitas, catatan, transaksi, dan data lainnya.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteUser}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <Trash2 className="h-4 w-4 mr-2" />
+              )}
+              Hapus Permanen
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* User Data Preview Dialog */}
+      <Dialog open={!!previewUser} onOpenChange={() => { setPreviewUser(null); setPreviewData(null); }}>
+        <DialogContent className="max-w-4xl max-h-[90vh] p-0 overflow-hidden">
+          {/* Sticky Header */}
+          <div className="sticky top-0 z-50 bg-background border-b p-4 flex items-center justify-between">
+            <DialogHeader className="flex-1">
+              <DialogTitle className="flex items-center gap-3">
+                <Avatar className="h-8 w-8 border-2 border-primary/30">
+                  <AvatarFallback className="bg-primary/10 text-primary text-sm">
+                    {getInitials(previewUser?.display_name || null)}
+                  </AvatarFallback>
+                </Avatar>
+                <div>
+                  <span>Data User: {previewUser?.display_name || 'Unnamed'}</span>
+                  <Badge 
+                    variant="secondary" 
+                    className={`ml-2 ${previewUser?.role === 'admin' ? 'bg-amber-500/20 text-amber-500' : ''}`}
+                  >
+                    {previewUser?.role}
+                  </Badge>
+                </div>
+              </DialogTitle>
+            </DialogHeader>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => { setPreviewUser(null); setPreviewData(null); }}
+              className="ml-4"
+            >
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Kembali ke Admin
+            </Button>
+          </div>
+
+          {loadingPreview ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+          ) : previewData && (
+            <ScrollArea className="h-[calc(90vh-80px)]">
+              <div className="p-4">
+                <Tabs defaultValue="activities" className="w-full">
+                  <TabsList className="grid w-full grid-cols-5 mb-4">
+                    <TabsTrigger value="activities" className="flex items-center gap-1">
+                      <ListTodo className="h-4 w-4" />
+                      <span className="hidden sm:inline">Aktivitas</span>
+                      <Badge variant="secondary" className="ml-1">{previewData.activities.length}</Badge>
+                    </TabsTrigger>
+                    <TabsTrigger value="notes" className="flex items-center gap-1">
+                      <StickyNote className="h-4 w-4" />
+                      <span className="hidden sm:inline">Catatan</span>
+                      <Badge variant="secondary" className="ml-1">{previewData.notes.length}</Badge>
+                    </TabsTrigger>
+                    <TabsTrigger value="transactions" className="flex items-center gap-1">
+                      <Wallet className="h-4 w-4" />
+                      <span className="hidden sm:inline">Transaksi</span>
+                      <Badge variant="secondary" className="ml-1">{previewData.transactions.length}</Badge>
+                    </TabsTrigger>
+                    <TabsTrigger value="prayers" className="flex items-center gap-1">
+                      <BookOpen className="h-4 w-4" />
+                      <span className="hidden sm:inline">Doa</span>
+                      <Badge variant="secondary" className="ml-1">{previewData.prayers_advices.length}</Badge>
+                    </TabsTrigger>
+                    <TabsTrigger value="pomodoro" className="flex items-center gap-1">
+                      <Timer className="h-4 w-4" />
+                      <span className="hidden sm:inline">Pomodoro</span>
+                      <Badge variant="secondary" className="ml-1">{previewData.pomodoro_sessions.length}</Badge>
+                    </TabsTrigger>
+                  </TabsList>
+
+                  {/* Activities Tab */}
+                  <TabsContent value="activities" className="space-y-2">
+                    {previewData.activities.length === 0 ? (
+                      <p className="text-center text-muted-foreground py-8">Tidak ada aktivitas</p>
+                    ) : (
+                      previewData.activities.map((item) => (
+                        <Card key={item.id} className="p-3">
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <p className="font-medium">{item.title}</p>
+                              {item.description && (
+                                <p className="text-sm text-muted-foreground line-clamp-2">{item.description}</p>
+                              )}
+                              <div className="flex gap-2 mt-1">
+                                <Badge variant="outline" className="text-xs">
+                                  {item.status || 'todo'}
+                                </Badge>
+                                {item.scheduled_date && (
+                                  <Badge variant="secondary" className="text-xs">
+                                    <Calendar className="h-3 w-3 mr-1" />
+                                    {formatDate(item.scheduled_date)}
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </Card>
+                      ))
+                    )}
+                  </TabsContent>
+
+                  {/* Notes Tab */}
+                  <TabsContent value="notes" className="space-y-2">
+                    {previewData.notes.length === 0 ? (
+                      <p className="text-center text-muted-foreground py-8">Tidak ada catatan</p>
+                    ) : (
+                      previewData.notes.map((item) => (
+                        <Card key={item.id} className="p-3">
+                          <p className="font-medium">{item.title}</p>
+                          {item.content && (
+                            <p className="text-sm text-muted-foreground line-clamp-3 mt-1">{item.content}</p>
+                          )}
+                          <Badge variant="outline" className="text-xs mt-2">{item.status}</Badge>
+                        </Card>
+                      ))
+                    )}
+                  </TabsContent>
+
+                  {/* Transactions Tab */}
+                  <TabsContent value="transactions" className="space-y-2">
+                    {previewData.transactions.length === 0 ? (
+                      <p className="text-center text-muted-foreground py-8">Tidak ada transaksi</p>
+                    ) : (
+                      previewData.transactions.map((item) => (
+                        <Card key={item.id} className="p-3">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="font-medium">{item.description || 'Transaksi'}</p>
+                              <p className="text-xs text-muted-foreground">{formatDate(item.transaction_date)}</p>
+                            </div>
+                            <p className={`font-bold ${item.type === 'income' ? 'text-green-500' : 'text-red-500'}`}>
+                              {item.type === 'income' ? '+' : '-'}{formatCurrency(item.amount)}
+                            </p>
+                          </div>
+                        </Card>
+                      ))
+                    )}
+                  </TabsContent>
+
+                  {/* Prayers Tab */}
+                  <TabsContent value="prayers" className="space-y-2">
+                    {previewData.prayers_advices.length === 0 ? (
+                      <p className="text-center text-muted-foreground py-8">Tidak ada doa/nasehat</p>
+                    ) : (
+                      previewData.prayers_advices.map((item) => (
+                        <Card key={item.id} className="p-3">
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <Badge variant={item.type === 'doa' ? 'default' : 'secondary'}>
+                                  {item.type}
+                                </Badge>
+                                <p className="font-medium">{item.title}</p>
+                              </div>
+                              {item.content_arabic && (
+                                <p className="text-right font-arabic text-lg mt-2">{item.content_arabic}</p>
+                              )}
+                              <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{item.content_indonesian}</p>
+                            </div>
+                          </div>
+                        </Card>
+                      ))
+                    )}
+                  </TabsContent>
+
+                  {/* Pomodoro Tab */}
+                  <TabsContent value="pomodoro" className="space-y-2">
+                    {previewData.pomodoro_sessions.length === 0 ? (
+                      <p className="text-center text-muted-foreground py-8">Tidak ada sesi pomodoro</p>
+                    ) : (
+                      previewData.pomodoro_sessions.map((item) => (
+                        <Card key={item.id} className="p-3">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <Timer className="h-4 w-4 text-primary" />
+                              <span className="font-medium">{item.duration_minutes} menit</span>
+                              <Badge variant="outline">{item.session_type || 'focus'}</Badge>
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              {formatDate(item.completed_at)}
+                            </p>
+                          </div>
+                        </Card>
+                      ))
+                    )}
+                  </TabsContent>
+                </Tabs>
+              </div>
+
+              {/* Sticky Footer Button */}
+              <div className="sticky bottom-0 p-4 bg-background border-t">
+                <Button
+                  className="w-full gradient-primary"
+                  onClick={() => { setPreviewUser(null); setPreviewData(null); }}
+                >
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Kembali ke Admin Panel
+                </Button>
+              </div>
+            </ScrollArea>
+          )}
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }
