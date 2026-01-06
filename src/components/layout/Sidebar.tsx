@@ -27,6 +27,7 @@ import {
   ChevronLeft,
   Menu,
   X,
+  Wallet,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
@@ -35,6 +36,7 @@ const navItems = [
   { icon: ListTodo, label: 'Aktivitas', href: '/activities' },
   { icon: Calendar, label: 'Kalender', href: '/calendar' },
   { icon: Timer, label: 'Focus Timer', href: '/pomodoro' },
+  { icon: Wallet, label: 'Keuangan', href: '/finance' },
   { icon: BarChart3, label: 'Analytics', href: '/analytics' },
   { icon: Settings, label: 'Pengaturan', href: '/settings' },
 ];
