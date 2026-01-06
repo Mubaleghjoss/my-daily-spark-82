@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
+import { usePWAUpdate } from '@/hooks/usePWAUpdate';
 import { 
   User, 
   Mail, 
@@ -15,12 +16,23 @@ import {
   Loader2,
   Check,
   Moon,
-  Sun
+  Sun,
+  RefreshCw,
+  Download,
+  Smartphone
 } from 'lucide-react';
 
 export default function Settings() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { 
+    needRefresh, 
+    offlineReady, 
+    updateServiceWorker, 
+    checkForUpdates, 
+    isChecking, 
+    lastChecked 
+  } = usePWAUpdate();
   
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
@@ -30,6 +42,24 @@ export default function Settings() {
   const [loading, setLoading] = useState(false);
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [isDark, setIsDark] = useState(true);
+
+  async function handleUpdateApp() {
+    await updateServiceWorker();
+    toast({
+      title: 'Mengupdate...',
+      description: 'Aplikasi akan di-refresh untuk menerapkan update',
+    });
+  }
+
+  async function handleCheckUpdates() {
+    await checkForUpdates();
+    if (!needRefresh) {
+      toast({
+        title: 'Tidak ada update',
+        description: 'Aplikasi sudah versi terbaru',
+      });
+    }
+  }
 
   useEffect(() => {
     if (user) {
@@ -163,7 +193,77 @@ export default function Settings() {
           <p className="text-muted-foreground">Kelola akun dan preferensimu</p>
         </div>
 
-        {/* Profile Settings */}
+        {/* App Update Settings */}
+        <Card className="glass border-border/50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Smartphone className="h-5 w-5 text-primary" />
+              Update Aplikasi
+            </CardTitle>
+            <CardDescription>Kelola update aplikasi PWA</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between p-4 rounded-lg bg-background/50 border border-border/50">
+              <div className="space-y-1">
+                <p className="font-medium">Status Aplikasi</p>
+                <p className="text-sm text-muted-foreground">
+                  {needRefresh ? (
+                    <span className="text-green-500 flex items-center gap-1">
+                      <Download className="h-3 w-3" />
+                      Update tersedia!
+                    </span>
+                  ) : offlineReady ? (
+                    <span className="text-blue-500">✓ Siap offline & terbaru</span>
+                  ) : (
+                    <span>Memeriksa...</span>
+                  )}
+                </p>
+                {lastChecked && (
+                  <p className="text-xs text-muted-foreground">
+                    Terakhir dicek: {lastChecked.toLocaleTimeString('id-ID')}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex gap-2 flex-wrap">
+              <Button
+                variant="outline"
+                onClick={handleCheckUpdates}
+                disabled={isChecking}
+                className="flex-1"
+              >
+                {isChecking ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                )}
+                Cek Update
+              </Button>
+              
+              {needRefresh && (
+                <Button
+                  onClick={handleUpdateApp}
+                  className="flex-1 gradient-primary"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Update Sekarang
+                </Button>
+              )}
+            </div>
+
+            <div className="text-xs text-muted-foreground space-y-1 p-3 rounded bg-muted/30">
+              <p>💡 Tips:</p>
+              <ul className="list-disc list-inside space-y-1">
+                <li>Aplikasi akan otomatis mengecek update setiap 30 menit</li>
+                <li>Saat ada update, tekan "Update Sekarang" untuk menerapkan</li>
+                <li>Tidak perlu uninstall atau hapus cache</li>
+              </ul>
+            </div>
+          </CardContent>
+        </Card>
+
+
         <Card className="glass border-border/50">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
