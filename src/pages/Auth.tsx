@@ -96,7 +96,7 @@ export default function Auth() {
     } else {
       toast({
         title: 'Registrasi Berhasil! 🎉',
-        description: 'Akun kamu sudah siap. Selamat datang di TaskNest!',
+        description: 'Akun kamu sudah siap. Selamat datang di Aktivitas-Ku!',
       });
     }
   };
@@ -115,7 +115,7 @@ export default function Auth() {
           <div className="p-3 rounded-xl gradient-primary glow-primary">
             <CheckSquare className="w-8 h-8 text-primary-foreground" />
           </div>
-          <h1 className="text-3xl font-bold gradient-text">TaskNest</h1>
+          <h1 className="text-3xl font-bold gradient-text">Aktivitas-Ku</h1>
         </div>
 
         <Card className="glass border-border/50">
