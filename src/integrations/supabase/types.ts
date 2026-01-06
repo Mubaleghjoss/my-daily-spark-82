@@ -239,12 +239,38 @@ export type Database = {
           },
         ]
       }
+      prayer_categories: {
+        Row: {
+          color: string
+          created_at: string
+          id: string
+          name: string
+          user_id: string
+        }
+        Insert: {
+          color?: string
+          created_at?: string
+          id?: string
+          name: string
+          user_id: string
+        }
+        Update: {
+          color?: string
+          created_at?: string
+          id?: string
+          name?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       prayers_advices: {
         Row: {
+          category: string | null
           content_arabic: string | null
           content_indonesian: string
           created_at: string
           id: string
+          is_favorite: boolean
           source: string | null
           title: string
           type: string
@@ -252,10 +278,12 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          category?: string | null
           content_arabic?: string | null
           content_indonesian: string
           created_at?: string
           id?: string
+          is_favorite?: boolean
           source?: string | null
           title: string
           type: string
@@ -263,10 +291,12 @@ export type Database = {
           user_id: string
         }
         Update: {
+          category?: string | null
           content_arabic?: string | null
           content_indonesian?: string
           created_at?: string
           id?: string
+          is_favorite?: boolean
           source?: string | null
           title?: string
           type?: string
