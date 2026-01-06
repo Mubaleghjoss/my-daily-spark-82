@@ -7,10 +7,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
-import { Plus, Search, Pencil, Trash2, Copy, BookOpen, MessageCircle, Filter, ExternalLink } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, BookOpen, MessageCircle, Filter, ExternalLink, Heart, Tag, X } from 'lucide-react';
 import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 
@@ -21,31 +22,57 @@ interface PrayerAdvice {
   content_arabic: string | null;
   content_indonesian: string;
   source: string | null;
+  is_favorite: boolean;
+  category: string | null;
   created_at: string;
   updated_at: string;
 }
 
+interface Category {
+  id: string;
+  name: string;
+  color: string;
+}
+
 type ItemType = 'all' | 'doa' | 'nasehat';
+type FavoriteFilter = 'all' | 'favorite';
+
+const defaultCategories = [
+  { name: 'Doa Harian', color: '#22c55e' },
+  { name: 'Doa Pagi & Petang', color: '#3b82f6' },
+  { name: 'Doa Makan', color: '#f59e0b' },
+  { name: 'Doa Tidur', color: '#8b5cf6' },
+  { name: 'Doa Perjalanan', color: '#06b6d4' },
+  { name: 'Nasehat Ulama', color: '#ec4899' },
+  { name: 'Motivasi', color: '#ef4444' },
+];
 
 export default function PrayersAdvices() {
   const { user } = useAuth();
   const [items, setItems] = useState<PrayerAdvice[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddDialog, setShowAddDialog] = useState(false);
+  const [showCategoryDialog, setShowCategoryDialog] = useState(false);
   const [editingItem, setEditingItem] = useState<PrayerAdvice | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<ItemType>('all');
+  const [filterCategory, setFilterCategory] = useState<string>('all');
+  const [filterFavorite, setFilterFavorite] = useState<FavoriteFilter>('all');
+  const [newCategory, setNewCategory] = useState({ name: '', color: '#6366f1' });
   const [newItem, setNewItem] = useState({
     type: 'doa' as 'doa' | 'nasehat',
     title: '',
     content_arabic: '',
     content_indonesian: '',
     source: '',
+    category: '',
   });
 
   useEffect(() => {
     if (user) {
       fetchItems();
+      fetchCategories();
     }
   }, [user]);
 
@@ -66,9 +93,75 @@ export default function PrayersAdvices() {
     }
   };
 
+  const fetchCategories = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('prayer_categories')
+        .select('*')
+        .order('name');
+
+      if (error) throw error;
+      setCategories((data || []) as Category[]);
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+    }
+  };
+
+  const handleAddCategory = async () => {
+    if (!user || !newCategory.name.trim()) return;
+
+    try {
+      const { error } = await supabase.from('prayer_categories').insert({
+        user_id: user.id,
+        name: newCategory.name,
+        color: newCategory.color,
+      });
+
+      if (error) throw error;
+      toast.success('Kategori berhasil ditambahkan');
+      setNewCategory({ name: '', color: '#6366f1' });
+      fetchCategories();
+    } catch (error) {
+      console.error('Error adding category:', error);
+      toast.error('Gagal menambahkan kategori');
+    }
+  };
+
+  const handleDeleteCategory = async (id: string) => {
+    try {
+      const { error } = await supabase.from('prayer_categories').delete().eq('id', id);
+      if (error) throw error;
+      toast.success('Kategori berhasil dihapus');
+      fetchCategories();
+    } catch (error) {
+      console.error('Error deleting category:', error);
+      toast.error('Gagal menghapus kategori');
+    }
+  };
+
+  const initDefaultCategories = async () => {
+    if (!user) return;
+    
+    try {
+      const inserts = defaultCategories.map(cat => ({
+        user_id: user.id,
+        name: cat.name,
+        color: cat.color,
+      }));
+      
+      const { error } = await supabase.from('prayer_categories').insert(inserts);
+      if (error) throw error;
+      toast.success('Kategori default berhasil ditambahkan');
+      fetchCategories();
+    } catch (error) {
+      console.error('Error adding default categories:', error);
+      toast.error('Gagal menambahkan kategori default');
+    }
+  };
+
   const handleAddItem = async () => {
     if (!user || !newItem.title.trim() || !newItem.content_indonesian.trim()) {
-      toast.error('Judul dan konten Indonesia wajib diisi');
+      toast.error('Judul dan konten wajib diisi');
       return;
     }
 
@@ -77,14 +170,15 @@ export default function PrayersAdvices() {
         user_id: user.id,
         type: newItem.type,
         title: newItem.title,
-        content_arabic: newItem.content_arabic || null,
+        content_arabic: newItem.type === 'doa' ? (newItem.content_arabic || null) : null,
         content_indonesian: newItem.content_indonesian,
         source: newItem.source || null,
+        category: newItem.category || null,
       });
 
       if (error) throw error;
       toast.success('Berhasil ditambahkan');
-      setNewItem({ type: 'doa', title: '', content_arabic: '', content_indonesian: '', source: '' });
+      setNewItem({ type: 'doa', title: '', content_arabic: '', content_indonesian: '', source: '', category: '' });
       setShowAddDialog(false);
       fetchItems();
     } catch (error) {
@@ -102,9 +196,10 @@ export default function PrayersAdvices() {
         .update({
           type: editingItem.type,
           title: editingItem.title,
-          content_arabic: editingItem.content_arabic,
+          content_arabic: editingItem.type === 'doa' ? editingItem.content_arabic : null,
           content_indonesian: editingItem.content_indonesian,
           source: editingItem.source,
+          category: editingItem.category,
         })
         .eq('id', editingItem.id);
 
@@ -115,6 +210,24 @@ export default function PrayersAdvices() {
     } catch (error) {
       console.error('Error updating item:', error);
       toast.error('Gagal memperbarui');
+    }
+  };
+
+  const handleToggleFavorite = async (item: PrayerAdvice) => {
+    try {
+      const { error } = await supabase
+        .from('prayers_advices')
+        .update({ is_favorite: !item.is_favorite })
+        .eq('id', item.id);
+
+      if (error) throw error;
+      setItems(prev => prev.map(i => 
+        i.id === item.id ? { ...i, is_favorite: !i.is_favorite } : i
+      ));
+      toast.success(item.is_favorite ? 'Dihapus dari favorit' : 'Ditambahkan ke favorit');
+    } catch (error) {
+      console.error('Error toggling favorite:', error);
+      toast.error('Gagal memperbarui favorit');
     }
   };
 
@@ -133,7 +246,7 @@ export default function PrayersAdvices() {
   const handleCopyToWhatsApp = (item: PrayerAdvice) => {
     let text = `*${item.title}*\n\n`;
     
-    if (item.content_arabic) {
+    if (item.type === 'doa' && item.content_arabic) {
       text += `${item.content_arabic}\n\n`;
     }
     
@@ -157,9 +270,17 @@ export default function PrayersAdvices() {
       (item.source?.toLowerCase().includes(searchQuery.toLowerCase()));
     
     const matchesType = filterType === 'all' || item.type === filterType;
+    const matchesCategory = filterCategory === 'all' || item.category === filterCategory;
+    const matchesFavorite = filterFavorite === 'all' || item.is_favorite;
     
-    return matchesSearch && matchesType;
+    return matchesSearch && matchesType && matchesCategory && matchesFavorite;
   });
+
+  const getCategoryColor = (categoryName: string | null) => {
+    if (!categoryName) return '#6366f1';
+    const cat = categories.find(c => c.name === categoryName);
+    return cat?.color || '#6366f1';
+  };
 
   if (loading) {
     return (
@@ -181,102 +302,247 @@ export default function PrayersAdvices() {
             <p className="text-muted-foreground">Kumpulan doa dan nasehat islami</p>
           </div>
           
-          <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-            <DialogTrigger asChild>
-              <Button className="gradient-primary">
-                <Plus className="w-4 h-4 mr-2" />
-                Tambah
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>Tambah Doa / Nasehat</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium">Tipe</label>
-                  <Select 
-                    value={newItem.type} 
-                    onValueChange={(value: 'doa' | 'nasehat') => setNewItem({ ...newItem, type: value })}
-                  >
-                    <SelectTrigger className="mt-1">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="doa">Doa</SelectItem>
-                      <SelectItem value="nasehat">Nasehat</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Judul *</label>
-                  <Input
-                    placeholder="Contoh: Doa Sebelum Makan"
-                    value={newItem.title}
-                    onChange={(e) => setNewItem({ ...newItem, title: e.target.value })}
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Teks Arab (opsional)</label>
-                  <Textarea
-                    placeholder="اللَّهُمَّ بَارِكْ لَنَا..."
-                    value={newItem.content_arabic}
-                    onChange={(e) => setNewItem({ ...newItem, content_arabic: e.target.value })}
-                    className="mt-1 text-right font-arabic text-lg"
-                    dir="rtl"
-                    rows={3}
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Teks Indonesia *</label>
-                  <Textarea
-                    placeholder="Ya Allah, berkahilah kami..."
-                    value={newItem.content_indonesian}
-                    onChange={(e) => setNewItem({ ...newItem, content_indonesian: e.target.value })}
-                    className="mt-1"
-                    rows={4}
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Sumber / Perawi (opsional)</label>
-                  <Input
-                    placeholder="Contoh: HR. Bukhari, Syaikh Uthaymeen"
-                    value={newItem.source}
-                    onChange={(e) => setNewItem({ ...newItem, source: e.target.value })}
-                    className="mt-1"
-                  />
-                </div>
-                <Button onClick={handleAddItem} className="w-full">
-                  Simpan
+          <div className="flex gap-2">
+            <Dialog open={showCategoryDialog} onOpenChange={setShowCategoryDialog}>
+              <DialogTrigger asChild>
+                <Button variant="outline">
+                  <Tag className="w-4 h-4 mr-2" />
+                  Kategori
                 </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Kelola Kategori</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Nama kategori"
+                      value={newCategory.name}
+                      onChange={(e) => setNewCategory({ ...newCategory, name: e.target.value })}
+                      className="flex-1"
+                    />
+                    <Input
+                      type="color"
+                      value={newCategory.color}
+                      onChange={(e) => setNewCategory({ ...newCategory, color: e.target.value })}
+                      className="w-14 p-1 h-10"
+                    />
+                    <Button onClick={handleAddCategory} size="icon">
+                      <Plus className="w-4 h-4" />
+                    </Button>
+                  </div>
+                  
+                  {categories.length === 0 && (
+                    <div className="text-center py-4">
+                      <p className="text-muted-foreground text-sm mb-2">Belum ada kategori</p>
+                      <Button variant="outline" size="sm" onClick={initDefaultCategories}>
+                        Tambahkan Kategori Default
+                      </Button>
+                    </div>
+                  )}
+                  
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {categories.map(cat => (
+                      <div key={cat.id} className="flex items-center justify-between p-2 rounded-lg bg-muted/50">
+                        <div className="flex items-center gap-2">
+                          <div 
+                            className="w-4 h-4 rounded-full" 
+                            style={{ backgroundColor: cat.color }}
+                          />
+                          <span className="text-sm">{cat.name}</span>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-destructive hover:text-destructive"
+                          onClick={() => handleDeleteCategory(cat.id)}
+                        >
+                          <X className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+              <DialogTrigger asChild>
+                <Button className="gradient-primary">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Tambah
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Tambah Doa / Nasehat</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-sm font-medium">Tipe</label>
+                    <Select 
+                      value={newItem.type} 
+                      onValueChange={(value: 'doa' | 'nasehat') => setNewItem({ ...newItem, type: value })}
+                    >
+                      <SelectTrigger className="mt-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="doa">Doa</SelectItem>
+                        <SelectItem value="nasehat">Nasehat</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  <div>
+                    <label className="text-sm font-medium">Kategori</label>
+                    <Select 
+                      value={newItem.category} 
+                      onValueChange={(value) => setNewItem({ ...newItem, category: value })}
+                    >
+                      <SelectTrigger className="mt-1">
+                        <SelectValue placeholder="Pilih kategori (opsional)" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">Tanpa Kategori</SelectItem>
+                        {categories.map(cat => (
+                          <SelectItem key={cat.id} value={cat.name}>
+                            <div className="flex items-center gap-2">
+                              <div 
+                                className="w-3 h-3 rounded-full" 
+                                style={{ backgroundColor: cat.color }}
+                              />
+                              {cat.name}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium">Judul *</label>
+                    <Input
+                      placeholder={newItem.type === 'doa' ? "Contoh: Doa Sebelum Makan" : "Contoh: Keutamaan Sabar"}
+                      value={newItem.title}
+                      onChange={(e) => setNewItem({ ...newItem, title: e.target.value })}
+                      className="mt-1"
+                    />
+                  </div>
+
+                  {newItem.type === 'doa' ? (
+                    <>
+                      <div>
+                        <label className="text-sm font-medium">Teks Arab (opsional)</label>
+                        <Textarea
+                          placeholder="اللَّهُمَّ بَارِكْ لَنَا..."
+                          value={newItem.content_arabic}
+                          onChange={(e) => setNewItem({ ...newItem, content_arabic: e.target.value })}
+                          className="mt-1 text-right font-arabic text-lg"
+                          dir="rtl"
+                          rows={3}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium">Arti / Terjemahan *</label>
+                        <Textarea
+                          placeholder="Ya Allah, berkahilah kami..."
+                          value={newItem.content_indonesian}
+                          onChange={(e) => setNewItem({ ...newItem, content_indonesian: e.target.value })}
+                          className="mt-1"
+                          rows={4}
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <div>
+                      <label className="text-sm font-medium">Isi Nasehat *</label>
+                      <p className="text-xs text-muted-foreground mb-1">
+                        Tulis nasehat dalam format artikel. Anda bisa mencampur teks Arab dan Indonesia.
+                      </p>
+                      <Textarea
+                        placeholder="Tulis nasehat di sini... Anda bisa menulis dalam bahasa Arab dan Indonesia secara bersamaan dalam satu teks."
+                        value={newItem.content_indonesian}
+                        onChange={(e) => setNewItem({ ...newItem, content_indonesian: e.target.value })}
+                        className="mt-1"
+                        rows={8}
+                      />
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="text-sm font-medium">Sumber / Perawi (opsional)</label>
+                    <Input
+                      placeholder="Contoh: HR. Bukhari, Syaikh Uthaymeen"
+                      value={newItem.source}
+                      onChange={(e) => setNewItem({ ...newItem, source: e.target.value })}
+                      className="mt-1"
+                    />
+                  </div>
+                  <Button onClick={handleAddItem} className="w-full">
+                    Simpan
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
         </div>
 
-        {/* Search & Filter */}
-        <div className="flex flex-col sm:flex-row gap-3">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Cari doa atau nasehat..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
-            />
+        {/* Filters */}
+        <div className="space-y-3">
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder="Cari doa atau nasehat..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+            <Select value={filterType} onValueChange={(value: ItemType) => setFilterType(value)}>
+              <SelectTrigger className="w-full sm:w-[140px]">
+                <Filter className="w-4 h-4 mr-2" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua</SelectItem>
+                <SelectItem value="doa">Doa</SelectItem>
+                <SelectItem value="nasehat">Nasehat</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={filterCategory} onValueChange={setFilterCategory}>
+              <SelectTrigger className="w-full sm:w-[180px]">
+                <Tag className="w-4 h-4 mr-2" />
+                <SelectValue placeholder="Kategori" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua Kategori</SelectItem>
+                {categories.map(cat => (
+                  <SelectItem key={cat.id} value={cat.name}>
+                    <div className="flex items-center gap-2">
+                      <div 
+                        className="w-3 h-3 rounded-full" 
+                        style={{ backgroundColor: cat.color }}
+                      />
+                      {cat.name}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-          <Select value={filterType} onValueChange={(value: ItemType) => setFilterType(value)}>
-            <SelectTrigger className="w-full sm:w-[160px]">
-              <Filter className="w-4 h-4 mr-2" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Semua</SelectItem>
-              <SelectItem value="doa">Doa</SelectItem>
-              <SelectItem value="nasehat">Nasehat</SelectItem>
-            </SelectContent>
-          </Select>
+          
+          <Tabs value={filterFavorite} onValueChange={(v) => setFilterFavorite(v as FavoriteFilter)}>
+            <TabsList>
+              <TabsTrigger value="all">Semua</TabsTrigger>
+              <TabsTrigger value="favorite" className="gap-1">
+                <Heart className="w-3 h-3" />
+                Favorit
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
 
         {/* Items Grid */}
@@ -285,17 +551,33 @@ export default function PrayersAdvices() {
             <Card key={item.id} className="hover:shadow-md transition-shadow">
               <CardContent className="p-4 space-y-3">
                 <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     {item.type === 'doa' ? (
-                      <BookOpen className="w-4 h-4 text-primary" />
+                      <BookOpen className="w-4 h-4 text-primary flex-shrink-0" />
                     ) : (
-                      <MessageCircle className="w-4 h-4 text-secondary" />
+                      <MessageCircle className="w-4 h-4 text-secondary flex-shrink-0" />
                     )}
                     <Badge variant={item.type === 'doa' ? 'default' : 'secondary'}>
                       {item.type === 'doa' ? 'Doa' : 'Nasehat'}
                     </Badge>
+                    {item.category && (
+                      <Badge 
+                        variant="outline" 
+                        style={{ borderColor: getCategoryColor(item.category), color: getCategoryColor(item.category) }}
+                      >
+                        {item.category}
+                      </Badge>
+                    )}
                   </div>
-                  <div className="flex gap-1">
+                  <div className="flex gap-1 flex-shrink-0">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={`h-7 w-7 ${item.is_favorite ? 'text-red-500' : ''}`}
+                      onClick={() => handleToggleFavorite(item)}
+                    >
+                      <Heart className={`w-3 h-3 ${item.is_favorite ? 'fill-current' : ''}`} />
+                    </Button>
                     <Button
                       variant="ghost"
                       size="icon"
@@ -317,13 +599,13 @@ export default function PrayersAdvices() {
 
                 <h3 className="font-semibold text-sm">{item.title}</h3>
 
-                {item.content_arabic && (
+                {item.type === 'doa' && item.content_arabic && (
                   <p className="text-right font-arabic text-base leading-loose text-foreground/90" dir="rtl">
                     {item.content_arabic}
                   </p>
                 )}
 
-                <p className="text-sm text-muted-foreground line-clamp-3">
+                <p className={`text-sm text-muted-foreground ${item.type === 'nasehat' ? 'line-clamp-4 whitespace-pre-wrap' : 'line-clamp-3'}`}>
                   {item.content_indonesian}
                 </p>
 
@@ -384,6 +666,33 @@ export default function PrayersAdvices() {
                   </SelectContent>
                 </Select>
               </div>
+              
+              <div>
+                <label className="text-sm font-medium">Kategori</label>
+                <Select 
+                  value={editingItem.category || ''} 
+                  onValueChange={(value) => setEditingItem({ ...editingItem, category: value || null })}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Pilih kategori" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Tanpa Kategori</SelectItem>
+                    {categories.map(cat => (
+                      <SelectItem key={cat.id} value={cat.name}>
+                        <div className="flex items-center gap-2">
+                          <div 
+                            className="w-3 h-3 rounded-full" 
+                            style={{ backgroundColor: cat.color }}
+                          />
+                          {cat.name}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div>
                 <label className="text-sm font-medium">Judul</label>
                 <Input
@@ -392,25 +701,41 @@ export default function PrayersAdvices() {
                   className="mt-1"
                 />
               </div>
-              <div>
-                <label className="text-sm font-medium">Teks Arab</label>
-                <Textarea
-                  value={editingItem.content_arabic || ''}
-                  onChange={(e) => setEditingItem({ ...editingItem, content_arabic: e.target.value })}
-                  className="mt-1 text-right font-arabic text-lg"
-                  dir="rtl"
-                  rows={3}
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Teks Indonesia</label>
-                <Textarea
-                  value={editingItem.content_indonesian}
-                  onChange={(e) => setEditingItem({ ...editingItem, content_indonesian: e.target.value })}
-                  className="mt-1"
-                  rows={4}
-                />
-              </div>
+
+              {editingItem.type === 'doa' ? (
+                <>
+                  <div>
+                    <label className="text-sm font-medium">Teks Arab</label>
+                    <Textarea
+                      value={editingItem.content_arabic || ''}
+                      onChange={(e) => setEditingItem({ ...editingItem, content_arabic: e.target.value })}
+                      className="mt-1 text-right font-arabic text-lg"
+                      dir="rtl"
+                      rows={3}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Arti / Terjemahan</label>
+                    <Textarea
+                      value={editingItem.content_indonesian}
+                      onChange={(e) => setEditingItem({ ...editingItem, content_indonesian: e.target.value })}
+                      className="mt-1"
+                      rows={4}
+                    />
+                  </div>
+                </>
+              ) : (
+                <div>
+                  <label className="text-sm font-medium">Isi Nasehat</label>
+                  <Textarea
+                    value={editingItem.content_indonesian}
+                    onChange={(e) => setEditingItem({ ...editingItem, content_indonesian: e.target.value })}
+                    className="mt-1"
+                    rows={8}
+                  />
+                </div>
+              )}
+
               <div>
                 <label className="text-sm font-medium">Sumber / Perawi</label>
                 <Input
