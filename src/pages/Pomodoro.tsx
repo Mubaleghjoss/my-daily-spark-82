@@ -36,7 +36,8 @@ import {
   Volume2,
   VolumeX,
   ListTodo,
-  History
+  History,
+  Crown
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -550,7 +551,21 @@ export default function Pomodoro() {
 
   return (
     <AppLayout>
-      <div className="max-w-2xl mx-auto space-y-8">
+      <div className="max-w-2xl mx-auto space-y-8 relative">
+        {/* Premium Lock Overlay */}
+        {!subscriptionLoading && !isPremium && (
+          <div 
+            className="absolute inset-0 bg-background/80 backdrop-blur-sm z-40 flex items-center justify-center cursor-pointer"
+            onClick={() => setShowPremiumDialog(true)}
+          >
+            <div className="text-center p-6">
+              <Crown className="w-16 h-16 text-amber-500 mx-auto mb-4" />
+              <h3 className="text-xl font-bold mb-2">Fitur Premium</h3>
+              <p className="text-muted-foreground mb-4">Klik untuk melihat paket berlangganan</p>
+            </div>
+          </div>
+        )}
+
         {/* Header */}
         <div className="text-center">
           <h1 className="text-3xl font-bold gradient-text">Focus Timer</h1>

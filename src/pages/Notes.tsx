@@ -11,7 +11,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useSubscription } from '@/hooks/useSubscription';
 import { PremiumDialog } from '@/components/PremiumDialog';
 import { toast } from 'sonner';
-import { Plus, GripVertical, Pencil, Trash2, StickyNote, Clock, CheckCircle2, Calendar, FileText, Search, Filter } from 'lucide-react';
+import { Plus, GripVertical, Pencil, Trash2, StickyNote, Clock, CheckCircle2, Calendar, FileText, Search, Filter, Crown } from 'lucide-react';
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 
@@ -216,7 +216,20 @@ export default function Notes() {
 
   return (
     <AppLayout>
-      <div className="space-y-6">
+      <div className="space-y-6 relative">
+        {/* Premium Lock Overlay */}
+        {!subscriptionLoading && !isPremium && (
+          <div 
+            className="absolute inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center cursor-pointer"
+            onClick={() => setShowPremiumDialog(true)}
+          >
+            <div className="text-center p-6">
+              <Crown className="w-16 h-16 text-amber-500 mx-auto mb-4" />
+              <h3 className="text-xl font-bold mb-2">Fitur Premium</h3>
+              <p className="text-muted-foreground mb-4">Klik untuk melihat paket berlangganan</p>
+            </div>
+          </div>
+        )}
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
