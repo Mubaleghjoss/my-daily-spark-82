@@ -398,14 +398,14 @@ export default function PrayersAdvices() {
                   <div>
                     <label className="text-sm font-medium">Kategori</label>
                     <Select 
-                      value={newItem.category} 
-                      onValueChange={(value) => setNewItem({ ...newItem, category: value })}
+                      value={newItem.category || 'none'} 
+                      onValueChange={(value) => setNewItem({ ...newItem, category: value === 'none' ? '' : value })}
                     >
                       <SelectTrigger className="mt-1">
                         <SelectValue placeholder="Pilih kategori (opsional)" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">Tanpa Kategori</SelectItem>
+                        <SelectItem value="none">Tanpa Kategori</SelectItem>
                         {categories.map(cat => (
                           <SelectItem key={cat.id} value={cat.name}>
                             <div className="flex items-center gap-2">
@@ -670,14 +670,14 @@ export default function PrayersAdvices() {
               <div>
                 <label className="text-sm font-medium">Kategori</label>
                 <Select 
-                  value={editingItem.category || ''} 
-                  onValueChange={(value) => setEditingItem({ ...editingItem, category: value || null })}
+                  value={editingItem.category || 'none'} 
+                  onValueChange={(value) => setEditingItem({ ...editingItem, category: value === 'none' ? null : value })}
                 >
                   <SelectTrigger className="mt-1">
                     <SelectValue placeholder="Pilih kategori" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Tanpa Kategori</SelectItem>
+                    <SelectItem value="none">Tanpa Kategori</SelectItem>
                     {categories.map(cat => (
                       <SelectItem key={cat.id} value={cat.name}>
                         <div className="flex items-center gap-2">
