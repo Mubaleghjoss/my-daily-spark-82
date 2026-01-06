@@ -14,11 +14,11 @@ export default defineConfig(({ mode }) => ({
     react(),
     mode === "development" && componentTagger(),
     VitePWA({
-      registerType: "autoUpdate",
+      registerType: "prompt",
       includeAssets: ["favicon.ico", "robots.txt"],
       manifest: {
-        name: "TaskNest - Focus & Productivity",
-        short_name: "TaskNest",
+        name: "Aktivitas-Ku - Focus & Productivity",
+        short_name: "Aktivitas-Ku",
         description: "Aplikasi produktivitas dengan Focus Timer, Activity Tracker, dan Analytics",
         theme_color: "#7c3aed",
         background_color: "#0a0a0f",
@@ -47,6 +47,9 @@ export default defineConfig(({ mode }) => ({
       },
       workbox: {
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff,woff2}"],
+        cleanupOutdatedCaches: true,
+        skipWaiting: false,
+        clientsClaim: true,
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/.*supabase\.co\/.*/i,
