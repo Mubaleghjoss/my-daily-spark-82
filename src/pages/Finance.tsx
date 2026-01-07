@@ -32,8 +32,10 @@ import {
   RefreshCw,
   Play,
   Pause,
-  Crown
+  Crown,
+  Calculator as CalcIcon
 } from "lucide-react";
+import { Calculator } from "@/components/Calculator";
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfDay, endOfDay, parseISO, addDays, addWeeks, addMonths, addYears } from "date-fns";
 import { id } from "date-fns/locale";
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from "recharts";
@@ -150,6 +152,7 @@ export default function Finance() {
   });
 
   const [exportWhatsappNumber, setExportWhatsappNumber] = useState("");
+  const [showCalculator, setShowCalculator] = useState(false);
 
   const [statPeriod, setStatPeriod] = useState<StatPeriod>("monthly");
 
@@ -1078,12 +1081,24 @@ export default function Finance() {
                 </div>
                 <div>
                   <Label>Jumlah</Label>
-                  <Input
-                    type="number"
-                    placeholder="50000"
-                    value={newTransaction.amount}
-                    onChange={(e) => setNewTransaction({ ...newTransaction, amount: e.target.value })}
-                  />
+                  <div className="flex gap-2">
+                    <Input
+                      type="number"
+                      placeholder="50000"
+                      value={newTransaction.amount}
+                      onChange={(e) => setNewTransaction({ ...newTransaction, amount: e.target.value })}
+                      className="flex-1"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      onClick={() => setShowCalculator(true)}
+                      title="Buka Kalkulator"
+                    >
+                      <CalcIcon className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
                 <div>
                   <Label>Tanggal</Label>
@@ -1896,6 +1911,13 @@ export default function Finance() {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Calculator Dialog */}
+      <Calculator
+        open={showCalculator}
+        onOpenChange={setShowCalculator}
+        onResult={(result) => setNewTransaction({ ...newTransaction, amount: result })}
+      />
 
       {/* Premium Dialog */}
       <PremiumDialog 

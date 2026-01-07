@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -8,7 +9,12 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Crown, Check, MessageCircle, CreditCard, Star } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Crown, Check, MessageCircle, CreditCard, Star, Ticket, Loader2 } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
+import { toast } from 'sonner';
 
 interface PremiumDialogProps {
   open: boolean;
@@ -47,11 +53,123 @@ const plans = [
 ];
 
 export function PremiumDialog({ open, onOpenChange, featureName }: PremiumDialogProps) {
+  const { user } = useAuth();
+  const [promoCode, setPromoCode] = useState('');
+  const [isRedeeming, setIsRedeeming] = useState(false);
+
   const handleWhatsApp = (planName: string) => {
     const message = encodeURIComponent(
       `Halo Admin, saya ingin berlangganan paket ${planName} untuk Aktivitas-Ku. Berikut bukti transfer saya.`
     );
     window.open(`https://wa.me/6283818393029?text=${message}`, '_blank');
+  };
+
+  const handleRedeemPromo = async () => {
+    if (!user || !promoCode.trim()) {
+      toast.error('Masukkan kode promo');
+      return;
+    }
+
+    setIsRedeeming(true);
+    try {
+      // Find promo code
+      const { data: promo, error: promoError } = await supabase
+        .from('promo_codes')
+        .select('*')
+        .eq('code', promoCode.trim().toUpperCase())
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (promoError) throw promoError;
+      if (!promo) {
+        toast.error('Kode promo tidak valid atau sudah tidak aktif');
+        return;
+      }
+
+      // Check if expired
+      if (promo.expires_at && new Date(promo.expires_at) < new Date()) {
+        toast.error('Kode promo sudah kedaluwarsa');
+        return;
+      }
+
+      // Check max uses
+      if (promo.max_uses && promo.current_uses >= promo.max_uses) {
+        toast.error('Kode promo sudah mencapai batas penggunaan');
+        return;
+      }
+
+      // Check if already redeemed by user
+      const { data: existing } = await supabase
+        .from('promo_code_redemptions')
+        .select('id')
+        .eq('promo_code_id', promo.id)
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (existing) {
+        toast.error('Anda sudah pernah menggunakan kode promo ini');
+        return;
+      }
+
+      // Calculate expiration
+      const now = new Date();
+      const expiresAt = new Date(now);
+      expiresAt.setHours(expiresAt.getHours() + (promo.duration_hours || 0));
+      expiresAt.setDate(expiresAt.getDate() + (promo.duration_days || 0));
+
+      // Update user subscription
+      const { data: existingSub } = await supabase
+        .from('user_subscriptions')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (existingSub) {
+        await supabase
+          .from('user_subscriptions')
+          .update({
+            subscription_type: promo.subscription_type,
+            is_active: true,
+            started_at: now.toISOString(),
+            expires_at: promo.subscription_type === 'lifetime' ? null : expiresAt.toISOString(),
+          })
+          .eq('user_id', user.id);
+      } else {
+        await supabase
+          .from('user_subscriptions')
+          .insert({
+            user_id: user.id,
+            subscription_type: promo.subscription_type,
+            is_active: true,
+            started_at: now.toISOString(),
+            expires_at: promo.subscription_type === 'lifetime' ? null : expiresAt.toISOString(),
+          });
+      }
+
+      // Record redemption
+      await supabase.from('promo_code_redemptions').insert({
+        promo_code_id: promo.id,
+        user_id: user.id,
+        expires_at: expiresAt.toISOString(),
+      });
+
+      // Update promo usage count
+      await supabase
+        .from('promo_codes')
+        .update({ current_uses: promo.current_uses + 1 })
+        .eq('id', promo.id);
+
+      toast.success('🎉 Kode promo berhasil! Anda sekarang Premium');
+      setPromoCode('');
+      onOpenChange(false);
+      // Reload to update subscription status
+      window.location.reload();
+    } catch (error: any) {
+      console.error('Error redeeming promo:', error);
+      toast.error('Gagal menggunakan kode promo');
+    } finally {
+      setIsRedeeming(false);
+    }
   };
 
   return (
@@ -70,6 +188,31 @@ export function PremiumDialog({ open, onOpenChange, featureName }: PremiumDialog
               : 'Dapatkan akses ke semua fitur premium!'}
           </DialogDescription>
         </DialogHeader>
+
+        {/* Promo Code Section */}
+        <Card className="bg-gradient-to-r from-amber-500/10 to-orange-500/10 border-amber-500/30">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Ticket className="h-5 w-5 text-amber-500" />
+              <h4 className="font-semibold">Punya Kode Promo?</h4>
+            </div>
+            <div className="flex gap-2">
+              <Input
+                placeholder="Masukkan kode promo"
+                value={promoCode}
+                onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
+                className="flex-1 uppercase"
+              />
+              <Button 
+                onClick={handleRedeemPromo} 
+                disabled={isRedeeming || !promoCode.trim()}
+                className="bg-amber-500 hover:bg-amber-600"
+              >
+                {isRedeeming ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Redeem'}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
 
         <div className="grid gap-4 md:grid-cols-3 mt-4">
           {plans.map((plan) => (

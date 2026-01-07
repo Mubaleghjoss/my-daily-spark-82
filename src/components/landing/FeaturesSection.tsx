@@ -17,7 +17,8 @@ const features = [
   {
     icon: CheckSquare,
     title: 'Aktivitas Harian',
-    description: 'Kelola rutinitas dan to-do list harian dengan mudah. Atur prioritas dan pantau progress aktivitasmu.',
+    description: 'Kelola rutinitas dan to-do list harian dengan mudah.',
+    benefit: 'Atur prioritas tugas, buat sub-aktivitas, dan pantau progress harianmu. Tidak ada lagi tugas yang terlewat!',
     premium: false,
     color: 'text-blue-500',
     bgColor: 'bg-blue-500/10',
@@ -25,7 +26,8 @@ const features = [
   {
     icon: Timer,
     title: 'Focus Timer',
-    description: 'Teknik Pomodoro untuk meningkatkan fokus dan produktivitas. Dilengkapi statistik sesi kerja.',
+    description: 'Teknik Pomodoro untuk meningkatkan fokus dan produktivitas.',
+    benefit: 'Bekerja dalam sesi 25 menit dengan istirahat terjadwal. Tingkatkan konsentrasi dan hindari burnout.',
     premium: true,
     color: 'text-purple-500',
     bgColor: 'bg-purple-500/10',
@@ -33,7 +35,8 @@ const features = [
   {
     icon: Wallet,
     title: 'Keuangan',
-    description: 'Catat pemasukan dan pengeluaran. Kelola budget dan lihat laporan keuangan lengkap.',
+    description: 'Catat pemasukan dan pengeluaran dengan mudah.',
+    benefit: 'Pantau arus kas, analisis pengeluaran per kategori, dan kelola budget bulanan. Kendalikan keuanganmu!',
     premium: 'partial',
     color: 'text-green-500',
     bgColor: 'bg-green-500/10',
@@ -42,7 +45,8 @@ const features = [
   {
     icon: StickyNote,
     title: 'Catatan',
-    description: 'Simpan ide, catatan penting, dan memo dalam format yang terorganisir dengan baik.',
+    description: 'Simpan ide dan catatan penting.',
+    benefit: 'Tulis memo, catatan meeting, atau ide kreatif. Akses kapan saja dari mana saja dengan aman.',
     premium: true,
     color: 'text-amber-500',
     bgColor: 'bg-amber-500/10',
@@ -50,7 +54,8 @@ const features = [
   {
     icon: Heart,
     title: 'Doa & Nasehat',
-    description: 'Koleksi doa harian dan nasehat islami. Simpan favorit dan akses koleksi publik.',
+    description: 'Koleksi doa harian dan nasehat islami.',
+    benefit: 'Simpan doa favorit dengan teks Arab dan terjemahan. Bagikan ke teman via WhatsApp dengan mudah.',
     premium: 'partial',
     color: 'text-pink-500',
     bgColor: 'bg-pink-500/10',
@@ -59,7 +64,8 @@ const features = [
   {
     icon: CalendarDays,
     title: 'Kalender',
-    description: 'Lihat semua aktivitas dalam tampilan kalender. Rencanakan harimu dengan lebih baik.',
+    description: 'Lihat aktivitas dalam tampilan kalender.',
+    benefit: 'Rencanakan minggu dan bulanmu dengan visual. Lihat jadwal padat atau longgar dalam sekejap.',
     premium: false,
     color: 'text-cyan-500',
     bgColor: 'bg-cyan-500/10',
@@ -67,7 +73,8 @@ const features = [
   {
     icon: BarChart3,
     title: 'Analitik',
-    description: 'Pantau statistik produktivitas dan aktivitasmu dengan grafik yang informatif.',
+    description: 'Pantau statistik produktivitas.',
+    benefit: 'Grafik aktivitas mingguan, tren produktivitas, dan insight untuk meningkatkan performamu.',
     premium: false,
     color: 'text-indigo-500',
     bgColor: 'bg-indigo-500/10',
@@ -75,7 +82,8 @@ const features = [
   {
     icon: RefreshCw,
     title: 'Transaksi Berulang',
-    description: 'Atur transaksi rutin seperti gaji, tagihan, atau langganan yang otomatis tercatat.',
+    description: 'Atur transaksi rutin otomatis.',
+    benefit: 'Gaji bulanan, tagihan listrik, atau cicilan tercatat otomatis. Hemat waktu input data!',
     premium: true,
     color: 'text-teal-500',
     bgColor: 'bg-teal-500/10',
@@ -83,7 +91,8 @@ const features = [
   {
     icon: Globe,
     title: 'Doa Publik',
-    description: 'Akses ribuan doa dan nasehat dari komunitas tanpa perlu membuat sendiri.',
+    description: 'Akses koleksi doa dari komunitas.',
+    benefit: 'Temukan ribuan doa dan nasehat dari pengguna lain tanpa perlu mengetik sendiri.',
     premium: true,
     color: 'text-rose-500',
     bgColor: 'bg-rose-500/10',
@@ -133,8 +142,11 @@ export function FeaturesSection() {
                 <h3 className="text-lg font-semibold mb-2 group-hover:text-primary transition-colors">
                   {feature.title}
                 </h3>
-                <p className="text-sm text-muted-foreground mb-3">
+                <p className="text-sm text-muted-foreground mb-2">
                   {feature.description}
+                </p>
+                <p className="text-xs text-foreground/70">
+                  ✨ {feature.benefit}
                 </p>
                 {feature.premiumFeatures && (
                   <div className="flex flex-wrap gap-1">
