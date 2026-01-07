@@ -57,8 +57,14 @@ import {
   Timer,
   Calendar,
   ArrowLeft,
-  X
+  X,
+  Plus,
+  Ticket,
+  Clock,
+  CalendarDays
 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 type SubscriptionType = 'none' | 'monthly' | 'yearly' | 'lifetime';
 
@@ -84,6 +90,19 @@ interface UserData {
   pomodoro_sessions: any[];
 }
 
+interface PromoCode {
+  id: string;
+  code: string;
+  subscription_type: SubscriptionType;
+  duration_hours: number;
+  duration_days: number;
+  max_uses: number | null;
+  current_uses: number;
+  is_active: boolean;
+  expires_at: string | null;
+  created_at: string;
+}
+
 export default function AdminPanel() {
   const navigate = useNavigate();
   const { isAdmin, loading: roleLoading } = useUserRole();
@@ -100,6 +119,21 @@ export default function AdminPanel() {
   const [previewUser, setPreviewUser] = useState<UserWithRole | null>(null);
   const [previewData, setPreviewData] = useState<UserData | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
+  
+  // Promo codes state
+  const [promoCodes, setPromoCodes] = useState<PromoCode[]>([]);
+  const [loadingPromos, setLoadingPromos] = useState(false);
+  const [creatingPromo, setCreatingPromo] = useState(false);
+  const [deletingPromo, setDeletingPromo] = useState<string | null>(null);
+  const [activeAdminTab, setActiveAdminTab] = useState<'users' | 'promos'>('users');
+  const [newPromo, setNewPromo] = useState({
+    code: '',
+    subscription_type: 'monthly' as SubscriptionType,
+    duration_days: 0,
+    duration_hours: 24,
+    max_uses: 1,
+    expires_at: ''
+  });
 
   useEffect(() => {
     if (!roleLoading && !isAdmin) {
@@ -115,6 +149,7 @@ export default function AdminPanel() {
   useEffect(() => {
     if (isAdmin) {
       fetchUsers();
+      fetchPromoCodes();
     }
   }, [isAdmin]);
 
@@ -166,6 +201,133 @@ export default function AdminPanel() {
       });
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function fetchPromoCodes() {
+    setLoadingPromos(true);
+    try {
+      const { data, error } = await supabase
+        .from('promo_codes')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setPromoCodes((data || []) as PromoCode[]);
+    } catch (error) {
+      console.error('Error fetching promo codes:', error);
+      toast({
+        title: 'Error',
+        description: 'Gagal memuat daftar kode promo',
+        variant: 'destructive'
+      });
+    } finally {
+      setLoadingPromos(false);
+    }
+  }
+
+  async function handleCreatePromo() {
+    if (!newPromo.code.trim()) {
+      toast({
+        title: 'Error',
+        description: 'Kode promo wajib diisi',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    setCreatingPromo(true);
+    try {
+      const { error } = await supabase.from('promo_codes').insert({
+        code: newPromo.code.toUpperCase(),
+        subscription_type: newPromo.subscription_type,
+        duration_days: newPromo.duration_days,
+        duration_hours: newPromo.duration_hours,
+        max_uses: newPromo.max_uses || null,
+        expires_at: newPromo.expires_at ? new Date(newPromo.expires_at).toISOString() : null,
+        is_active: true
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: 'Berhasil!',
+        description: `Kode promo ${newPromo.code.toUpperCase()} berhasil dibuat`
+      });
+
+      setNewPromo({
+        code: '',
+        subscription_type: 'monthly',
+        duration_days: 0,
+        duration_hours: 24,
+        max_uses: 1,
+        expires_at: ''
+      });
+      fetchPromoCodes();
+    } catch (error: any) {
+      console.error('Error creating promo code:', error);
+      toast({
+        title: 'Error',
+        description: error.message?.includes('duplicate') ? 'Kode promo sudah ada' : 'Gagal membuat kode promo',
+        variant: 'destructive'
+      });
+    } finally {
+      setCreatingPromo(false);
+    }
+  }
+
+  async function handleTogglePromoStatus(promo: PromoCode) {
+    try {
+      const { error } = await supabase
+        .from('promo_codes')
+        .update({ is_active: !promo.is_active })
+        .eq('id', promo.id);
+
+      if (error) throw error;
+
+      setPromoCodes(prev => prev.map(p => 
+        p.id === promo.id ? { ...p, is_active: !p.is_active } : p
+      ));
+
+      toast({
+        title: 'Berhasil!',
+        description: `Kode promo ${promo.is_active ? 'dinonaktifkan' : 'diaktifkan'}`
+      });
+    } catch (error) {
+      console.error('Error toggling promo status:', error);
+      toast({
+        title: 'Error',
+        description: 'Gagal mengubah status kode promo',
+        variant: 'destructive'
+      });
+    }
+  }
+
+  async function handleDeletePromo(promoId: string) {
+    setDeletingPromo(promoId);
+    try {
+      const { error } = await supabase
+        .from('promo_codes')
+        .delete()
+        .eq('id', promoId);
+
+      if (error) throw error;
+
+      setPromoCodes(prev => prev.filter(p => p.id !== promoId));
+
+      toast({
+        title: 'Berhasil!',
+        description: 'Kode promo berhasil dihapus'
+      });
+    } catch (error) {
+      console.error('Error deleting promo code:', error);
+      toast({
+        title: 'Error',
+        description: 'Gagal menghapus kode promo',
+        variant: 'destructive'
+      });
+    } finally {
+      setDeletingPromo(null);
     }
   }
 
@@ -413,13 +575,28 @@ export default function AdminPanel() {
               <Shield className="h-8 w-8 text-primary" />
               Admin Panel
             </h1>
-            <p className="text-muted-foreground">Kelola user dan role aplikasi</p>
+            <p className="text-muted-foreground">Kelola user, role, dan kode promo</p>
           </div>
-          <Button variant="outline" onClick={fetchUsers} disabled={loading}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+          <Button variant="outline" onClick={() => { fetchUsers(); fetchPromoCodes(); }} disabled={loading || loadingPromos}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${loading || loadingPromos ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
         </div>
+
+        {/* Admin Tabs */}
+        <Tabs value={activeAdminTab} onValueChange={(v) => setActiveAdminTab(v as 'users' | 'promos')}>
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="users" className="flex items-center gap-2">
+              <Users className="h-4 w-4" />
+              Manajemen User
+            </TabsTrigger>
+            <TabsTrigger value="promos" className="flex items-center gap-2">
+              <Ticket className="h-4 w-4" />
+              Kode Promo
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="users" className="space-y-6 mt-6">
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -616,6 +793,242 @@ export default function AdminPanel() {
             )}
           </CardContent>
         </Card>
+          </TabsContent>
+
+          {/* Promo Codes Tab */}
+          <TabsContent value="promos" className="space-y-6 mt-6">
+            {/* Create Promo Form */}
+            <Card className="glass border-border/50">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Plus className="h-5 w-5 text-primary" />
+                  Buat Kode Promo Baru
+                </CardTitle>
+                <CardDescription>
+                  Buat kode promo untuk memberikan akses premium sementara
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="promo-code">Kode Promo *</Label>
+                    <Input
+                      id="promo-code"
+                      placeholder="Contoh: PROMO2026"
+                      value={newPromo.code}
+                      onChange={(e) => setNewPromo({ ...newPromo, code: e.target.value.toUpperCase() })}
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label>Tipe Langganan</Label>
+                    <Select
+                      value={newPromo.subscription_type}
+                      onValueChange={(value: SubscriptionType) => setNewPromo({ ...newPromo, subscription_type: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="monthly">Bulanan</SelectItem>
+                        <SelectItem value="yearly">Tahunan</SelectItem>
+                        <SelectItem value="lifetime">Selamanya</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="duration-days">Durasi (Hari)</Label>
+                    <Input
+                      id="duration-days"
+                      type="number"
+                      min="0"
+                      placeholder="0"
+                      value={newPromo.duration_days}
+                      onChange={(e) => setNewPromo({ ...newPromo, duration_days: parseInt(e.target.value) || 0 })}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="duration-hours">Durasi (Jam)</Label>
+                    <Input
+                      id="duration-hours"
+                      type="number"
+                      min="0"
+                      placeholder="24"
+                      value={newPromo.duration_hours}
+                      onChange={(e) => setNewPromo({ ...newPromo, duration_hours: parseInt(e.target.value) || 0 })}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="max-uses">Maks. Penggunaan</Label>
+                    <Input
+                      id="max-uses"
+                      type="number"
+                      min="1"
+                      placeholder="1"
+                      value={newPromo.max_uses}
+                      onChange={(e) => setNewPromo({ ...newPromo, max_uses: parseInt(e.target.value) || 1 })}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="expires-at">Berlaku Sampai (Opsional)</Label>
+                    <Input
+                      id="expires-at"
+                      type="datetime-local"
+                      value={newPromo.expires_at}
+                      onChange={(e) => setNewPromo({ ...newPromo, expires_at: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-4 p-3 rounded-lg bg-muted/50 text-sm text-muted-foreground">
+                  <p className="font-medium mb-1">Durasi Premium:</p>
+                  <p>
+                    {newPromo.duration_days > 0 && `${newPromo.duration_days} hari `}
+                    {newPromo.duration_hours > 0 && `${newPromo.duration_hours} jam`}
+                    {newPromo.duration_days === 0 && newPromo.duration_hours === 0 && 'Belum diatur'}
+                  </p>
+                </div>
+
+                <Button 
+                  onClick={handleCreatePromo} 
+                  disabled={creatingPromo} 
+                  className="mt-4 gradient-primary"
+                >
+                  {creatingPromo ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Plus className="h-4 w-4 mr-2" />
+                  )}
+                  Buat Kode Promo
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Promo Codes List */}
+            <Card className="glass border-border/50">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Ticket className="h-5 w-5 text-primary" />
+                  Daftar Kode Promo
+                </CardTitle>
+                <CardDescription>
+                  {promoCodes.length} kode promo • {promoCodes.filter(p => p.is_active).length} aktif
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {loadingPromos ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  </div>
+                ) : promoCodes.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Ticket className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>Belum ada kode promo</p>
+                    <p className="text-sm">Buat kode promo pertama di atas</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Kode</TableHead>
+                          <TableHead>Tipe</TableHead>
+                          <TableHead>Durasi</TableHead>
+                          <TableHead>Penggunaan</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Berlaku s.d</TableHead>
+                          <TableHead className="text-right">Aksi</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {promoCodes.map((promo) => {
+                          const typeLabels: Record<SubscriptionType, string> = {
+                            none: 'Gratis',
+                            monthly: 'Bulanan',
+                            yearly: 'Tahunan',
+                            lifetime: 'Selamanya'
+                          };
+
+                          return (
+                            <TableRow key={promo.id}>
+                              <TableCell>
+                                <code className="px-2 py-1 rounded bg-primary/10 text-primary font-mono text-sm">
+                                  {promo.code}
+                                </code>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline">{typeLabels[promo.subscription_type]}</Badge>
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-2 text-sm">
+                                  {promo.duration_days > 0 && (
+                                    <span className="flex items-center gap-1">
+                                      <CalendarDays className="h-3 w-3" />
+                                      {promo.duration_days}h
+                                    </span>
+                                  )}
+                                  {promo.duration_hours > 0 && (
+                                    <span className="flex items-center gap-1">
+                                      <Clock className="h-3 w-3" />
+                                      {promo.duration_hours}j
+                                    </span>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <span className={promo.max_uses && promo.current_uses >= promo.max_uses ? 'text-destructive' : ''}>
+                                  {promo.current_uses}/{promo.max_uses || '∞'}
+                                </span>
+                              </TableCell>
+                              <TableCell>
+                                <Badge 
+                                  variant={promo.is_active ? 'default' : 'secondary'}
+                                  className={promo.is_active ? 'bg-green-500/20 text-green-600 border-green-500/30' : ''}
+                                >
+                                  {promo.is_active ? 'Aktif' : 'Nonaktif'}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-sm text-muted-foreground">
+                                {promo.expires_at ? formatDate(promo.expires_at) : '-'}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center justify-end gap-2">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleTogglePromoStatus(promo)}
+                                  >
+                                    {promo.is_active ? 'Nonaktifkan' : 'Aktifkan'}
+                                  </Button>
+                                  <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    onClick={() => handleDeletePromo(promo.id)}
+                                    disabled={deletingPromo === promo.id}
+                                  >
+                                    {deletingPromo === promo.id ? (
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <Trash2 className="h-4 w-4" />
+                                    )}
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </div>
 
       {/* Delete Confirmation Dialog */}
