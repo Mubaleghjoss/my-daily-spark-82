@@ -13,7 +13,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useSubscription } from '@/hooks/useSubscription';
 import { PremiumDialog } from '@/components/PremiumDialog';
 import { toast } from 'sonner';
-import { Plus, Search, Pencil, Trash2, BookOpen, MessageCircle, Filter, ExternalLink, Heart, Tag, X, Crown, Globe, Eye } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, BookOpen, MessageCircle, Filter, ExternalLink, Heart, Tag, X, Crown, Globe, Eye, Copy, Loader2 } from 'lucide-react';
 import { PrayerDetailDialog } from '@/components/PrayerDetailDialog';
 import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
@@ -69,6 +69,7 @@ export default function PrayersAdvices() {
   const [activeTab, setActiveTab] = useState<'my' | 'public'>('my');
   const [publicSearchQuery, setPublicSearchQuery] = useState('');
   const [publicFilterType, setPublicFilterType] = useState<ItemType>('all');
+  const [duplicating, setDuplicating] = useState<string | null>(null);
   const [newCategory, setNewCategory] = useState({ name: '', color: '#6366f1' });
   const [newItem, setNewItem] = useState({
     type: 'doa' as 'doa' | 'nasehat',
@@ -294,6 +295,33 @@ export default function PrayersAdvices() {
     const whatsappUrl = `https://wa.me/?text=${encodedText}`;
     window.open(whatsappUrl, '_blank');
     toast.success('Membuka WhatsApp...');
+  };
+
+  const handleDuplicateToPrivate = async (item: PrayerAdvice) => {
+    if (!user || !isPremium) return;
+
+    setDuplicating(item.id);
+    try {
+      const { error } = await supabase.from('prayers_advices').insert({
+        user_id: user.id,
+        type: item.type,
+        title: item.title,
+        content_arabic: item.content_arabic,
+        content_indonesian: item.content_indonesian,
+        source: item.source,
+        category: item.category,
+        is_favorite: false,
+      });
+
+      if (error) throw error;
+      toast.success('Berhasil disalin ke koleksi pribadi');
+      fetchItems();
+    } catch (error) {
+      console.error('Error duplicating item:', error);
+      toast.error('Gagal menyalin ke koleksi pribadi');
+    } finally {
+      setDuplicating(null);
+    }
   };
 
   const filteredItems = items.filter(item => {
@@ -807,15 +835,41 @@ export default function PrayersAdvices() {
                           <span className="text-xs text-muted-foreground">
                             {format(new Date(item.created_at), 'dd MMM yyyy', { locale: idLocale })}
                           </span>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-8 text-xs"
-                            onClick={() => handleCopyToWhatsApp(item)}
-                          >
-                            <ExternalLink className="w-3 h-3 mr-1" />
-                            Share WA
-                          </Button>
+                          <div className="flex gap-1">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 text-xs"
+                              onClick={() => setDetailItem(item)}
+                            >
+                              <Eye className="w-3 h-3 mr-1" />
+                              Detail
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 text-xs"
+                              onClick={() => handleDuplicateToPrivate(item)}
+                              disabled={duplicating === item.id}
+                            >
+                              {duplicating === item.id ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <>
+                                  <Copy className="w-3 h-3 mr-1" />
+                                  Salin
+                                </>
+                              )}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 text-xs"
+                              onClick={() => handleCopyToWhatsApp(item)}
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                            </Button>
+                          </div>
                         </div>
                       </CardContent>
                     </Card>
