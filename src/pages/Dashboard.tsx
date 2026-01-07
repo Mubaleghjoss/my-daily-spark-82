@@ -23,7 +23,8 @@ import { startOfMonth, endOfMonth, format } from 'date-fns';
 interface DashboardStats {
   totalActivities: number;
   totalSubActivities: number;
-  completedActivities: number;
+  completedToday: number;
+  notCompletedToday: number;
   pomodoroSessions: number;
 }
 
@@ -38,7 +39,8 @@ export default function Dashboard() {
   const [stats, setStats] = useState<DashboardStats>({
     totalActivities: 0,
     totalSubActivities: 0,
-    completedActivities: 0,
+    completedToday: 0,
+    notCompletedToday: 0,
     pomodoroSessions: 0,
   });
   const [financeStats, setFinanceStats] = useState<FinanceStats>({
@@ -56,18 +58,24 @@ export default function Dashboard() {
       const monthStart = format(startOfMonth(new Date()), 'yyyy-MM-dd');
       const monthEnd = format(endOfMonth(new Date()), 'yyyy-MM-dd');
 
-      const [activitiesRes, subActivitiesRes, completedRes, pomodoroRes, transactionsRes] = await Promise.all([
+      const [activitiesRes, subActivitiesRes, todayCompletionsRes, allActivitiesRes, pomodoroRes, transactionsRes] = await Promise.all([
         supabase.from('activities').select('id', { count: 'exact' }).eq('user_id', user.id).is('parent_id', null),
         supabase.from('activities').select('id', { count: 'exact' }).eq('user_id', user.id).not('parent_id', 'is', null),
-        supabase.from('activities').select('id', { count: 'exact' }).eq('user_id', user.id).eq('status', 'done'),
+        supabase.from('activity_completions').select('activity_id').eq('user_id', user.id).gte('completed_at', today),
+        supabase.from('activities').select('id').eq('user_id', user.id),
         supabase.from('pomodoro_sessions').select('id', { count: 'exact' }).eq('user_id', user.id).gte('completed_at', today),
         supabase.from('transactions').select('type, amount').eq('user_id', user.id).gte('transaction_date', monthStart).lte('transaction_date', monthEnd),
       ]);
 
+      const totalAllActivities = allActivitiesRes.data?.length || 0;
+      const completedTodayCount = todayCompletionsRes.data?.length || 0;
+      const notCompletedTodayCount = totalAllActivities - completedTodayCount;
+
       setStats({
         totalActivities: activitiesRes.count || 0,
         totalSubActivities: subActivitiesRes.count || 0,
-        completedActivities: completedRes.count || 0,
+        completedToday: completedTodayCount,
+        notCompletedToday: notCompletedTodayCount > 0 ? notCompletedTodayCount : 0,
         pomodoroSessions: pomodoroRes.count || 0,
       });
 
@@ -160,15 +168,21 @@ export default function Dashboard() {
           <Card className="glass border-border/50">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Sudah Selesai
+                Status Hari Ini
               </CardTitle>
               <CheckCircle2 className="h-4 w-4 text-neon-green" />
             </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-neon-green">{stats.completedActivities}</div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Aktivitas selesai
-              </p>
+            <CardContent className="space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-neon-green/10 rounded-lg p-2 text-center">
+                  <div className="text-xl font-bold text-neon-green">{stats.completedToday}</div>
+                  <p className="text-[10px] text-muted-foreground">Selesai</p>
+                </div>
+                <div className="bg-orange-500/10 rounded-lg p-2 text-center">
+                  <div className="text-xl font-bold text-orange-500">{stats.notCompletedToday}</div>
+                  <p className="text-[10px] text-muted-foreground">Belum</p>
+                </div>
+              </div>
             </CardContent>
           </Card>
 
@@ -202,21 +216,21 @@ export default function Dashboard() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="text-center p-3 rounded-lg bg-green-500/10">
-                <TrendingUp className="h-5 w-5 mx-auto text-green-500 mb-1" />
-                <p className="text-xs text-muted-foreground">Pemasukan</p>
-                <p className="text-lg font-bold text-green-500">{formatCurrency(financeStats.income)}</p>
+            <div className="grid grid-cols-3 gap-2 md:gap-4">
+              <div className="text-center p-2 md:p-3 rounded-lg bg-green-500/10">
+                <TrendingUp className="h-4 w-4 md:h-5 md:w-5 mx-auto text-green-500 mb-1" />
+                <p className="text-[10px] md:text-xs text-muted-foreground">Pemasukan</p>
+                <p className="text-xs md:text-lg font-bold text-green-500 truncate">{formatCurrency(financeStats.income)}</p>
               </div>
-              <div className="text-center p-3 rounded-lg bg-red-500/10">
-                <TrendingDown className="h-5 w-5 mx-auto text-red-500 mb-1" />
-                <p className="text-xs text-muted-foreground">Pengeluaran</p>
-                <p className="text-lg font-bold text-red-500">{formatCurrency(financeStats.expense)}</p>
+              <div className="text-center p-2 md:p-3 rounded-lg bg-red-500/10">
+                <TrendingDown className="h-4 w-4 md:h-5 md:w-5 mx-auto text-red-500 mb-1" />
+                <p className="text-[10px] md:text-xs text-muted-foreground">Pengeluaran</p>
+                <p className="text-xs md:text-lg font-bold text-red-500 truncate">{formatCurrency(financeStats.expense)}</p>
               </div>
-              <div className={`text-center p-3 rounded-lg ${financeStats.balance >= 0 ? 'bg-blue-500/10' : 'bg-red-500/10'}`}>
-                <Wallet className={`h-5 w-5 mx-auto mb-1 ${financeStats.balance >= 0 ? 'text-blue-500' : 'text-red-500'}`} />
-                <p className="text-xs text-muted-foreground">Saldo</p>
-                <p className={`text-lg font-bold ${financeStats.balance >= 0 ? 'text-blue-500' : 'text-red-500'}`}>{formatCurrency(financeStats.balance)}</p>
+              <div className={`text-center p-2 md:p-3 rounded-lg ${financeStats.balance >= 0 ? 'bg-blue-500/10' : 'bg-red-500/10'}`}>
+                <Wallet className={`h-4 w-4 md:h-5 md:w-5 mx-auto mb-1 ${financeStats.balance >= 0 ? 'text-blue-500' : 'text-red-500'}`} />
+                <p className="text-[10px] md:text-xs text-muted-foreground">Saldo</p>
+                <p className={`text-xs md:text-lg font-bold truncate ${financeStats.balance >= 0 ? 'text-blue-500' : 'text-red-500'}`}>{formatCurrency(financeStats.balance)}</p>
               </div>
             </div>
           </CardContent>
@@ -279,17 +293,17 @@ export default function Dashboard() {
             <div className="space-y-4">
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">
-                  {stats.completedActivities} dari {stats.totalActivities + stats.totalSubActivities} aktivitas selesai
+                  {stats.completedToday} dari {stats.totalActivities + stats.totalSubActivities} aktivitas selesai hari ini
                 </span>
                 <span className="font-medium">
                   {(stats.totalActivities + stats.totalSubActivities) > 0 
-                    ? Math.round((stats.completedActivities / (stats.totalActivities + stats.totalSubActivities)) * 100) 
+                    ? Math.round((stats.completedToday / (stats.totalActivities + stats.totalSubActivities)) * 100) 
                     : 0}%
                 </span>
               </div>
               <Progress 
                 value={(stats.totalActivities + stats.totalSubActivities) > 0 
-                  ? (stats.completedActivities / (stats.totalActivities + stats.totalSubActivities)) * 100 
+                  ? (stats.completedToday / (stats.totalActivities + stats.totalSubActivities)) * 100 
                   : 0
                 } 
                 className="h-3"
