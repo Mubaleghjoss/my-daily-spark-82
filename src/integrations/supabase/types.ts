@@ -649,6 +649,7 @@ export type Database = {
       is_admin: { Args: { _user_id: string }; Returns: boolean }
       is_first_user: { Args: never; Returns: boolean }
       is_premium: { Args: { _user_id: string }; Returns: boolean }
+      redeem_promo_code: { Args: { p_code: string }; Returns: Json }
     }
     Enums: {
       app_role: "admin" | "user"
