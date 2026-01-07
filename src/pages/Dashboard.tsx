@@ -22,8 +22,8 @@ import { startOfMonth, endOfMonth, format } from 'date-fns';
 
 interface DashboardStats {
   totalActivities: number;
-  completedToday: number;
-  inProgress: number;
+  totalSubActivities: number;
+  completedActivities: number;
   pomodoroSessions: number;
 }
 
@@ -37,8 +37,8 @@ export default function Dashboard() {
   const { user } = useAuth();
   const [stats, setStats] = useState<DashboardStats>({
     totalActivities: 0,
-    completedToday: 0,
-    inProgress: 0,
+    totalSubActivities: 0,
+    completedActivities: 0,
     pomodoroSessions: 0,
   });
   const [financeStats, setFinanceStats] = useState<FinanceStats>({
@@ -56,18 +56,18 @@ export default function Dashboard() {
       const monthStart = format(startOfMonth(new Date()), 'yyyy-MM-dd');
       const monthEnd = format(endOfMonth(new Date()), 'yyyy-MM-dd');
 
-      const [activitiesRes, completedRes, progressRes, pomodoroRes, transactionsRes] = await Promise.all([
-        supabase.from('activities').select('id', { count: 'exact' }).eq('user_id', user.id),
-        supabase.from('activities').select('id', { count: 'exact' }).eq('user_id', user.id).eq('status', 'done').gte('updated_at', today),
-        supabase.from('activities').select('id', { count: 'exact' }).eq('user_id', user.id).eq('status', 'in_progress'),
+      const [activitiesRes, subActivitiesRes, completedRes, pomodoroRes, transactionsRes] = await Promise.all([
+        supabase.from('activities').select('id', { count: 'exact' }).eq('user_id', user.id).is('parent_id', null),
+        supabase.from('activities').select('id', { count: 'exact' }).eq('user_id', user.id).not('parent_id', 'is', null),
+        supabase.from('activities').select('id', { count: 'exact' }).eq('user_id', user.id).eq('status', 'done'),
         supabase.from('pomodoro_sessions').select('id', { count: 'exact' }).eq('user_id', user.id).gte('completed_at', today),
         supabase.from('transactions').select('type, amount').eq('user_id', user.id).gte('transaction_date', monthStart).lte('transaction_date', monthEnd),
       ]);
 
       setStats({
         totalActivities: activitiesRes.count || 0,
-        completedToday: completedRes.count || 0,
-        inProgress: progressRes.count || 0,
+        totalSubActivities: subActivitiesRes.count || 0,
+        completedActivities: completedRes.count || 0,
         pomodoroSessions: pomodoroRes.count || 0,
       });
 
@@ -145,14 +145,14 @@ export default function Dashboard() {
           <Card className="glass border-border/50">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Selesai Hari Ini
+                Sub Kegiatan
               </CardTitle>
-              <CheckCircle2 className="h-4 w-4 text-neon-green" />
+              <Circle className="h-4 w-4 text-accent" />
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-neon-green">{stats.completedToday}</div>
+              <div className="text-3xl font-bold text-accent">{stats.totalSubActivities}</div>
               <p className="text-xs text-muted-foreground mt-1">
-                Aktivitas diselesaikan
+                Total sub aktivitas
               </p>
             </CardContent>
           </Card>
@@ -160,14 +160,14 @@ export default function Dashboard() {
           <Card className="glass border-border/50">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Sedang Dikerjakan
+                Sudah Selesai
               </CardTitle>
-              <Clock className="h-4 w-4 text-accent" />
+              <CheckCircle2 className="h-4 w-4 text-neon-green" />
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-accent">{stats.inProgress}</div>
+              <div className="text-3xl font-bold text-neon-green">{stats.completedActivities}</div>
               <p className="text-xs text-muted-foreground mt-1">
-                Dalam progres
+                Aktivitas selesai
               </p>
             </CardContent>
           </Card>
@@ -267,29 +267,29 @@ export default function Dashboard() {
           </Card>
         </div>
 
-        {/* Today's Progress */}
+        {/* Progress Keseluruhan */}
         <Card className="glass border-border/50">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <TrendingUp className="w-5 h-5 text-primary" />
-              Progress Hari Ini
+              Progress Keseluruhan
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">
-                  {stats.completedToday} dari {stats.totalActivities} aktivitas selesai
+                  {stats.completedActivities} dari {stats.totalActivities + stats.totalSubActivities} aktivitas selesai
                 </span>
                 <span className="font-medium">
-                  {stats.totalActivities > 0 
-                    ? Math.round((stats.completedToday / stats.totalActivities) * 100) 
+                  {(stats.totalActivities + stats.totalSubActivities) > 0 
+                    ? Math.round((stats.completedActivities / (stats.totalActivities + stats.totalSubActivities)) * 100) 
                     : 0}%
                 </span>
               </div>
               <Progress 
-                value={stats.totalActivities > 0 
-                  ? (stats.completedToday / stats.totalActivities) * 100 
+                value={(stats.totalActivities + stats.totalSubActivities) > 0 
+                  ? (stats.completedActivities / (stats.totalActivities + stats.totalSubActivities)) * 100 
                   : 0
                 } 
                 className="h-3"

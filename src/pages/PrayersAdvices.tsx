@@ -13,7 +13,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { useSubscription } from '@/hooks/useSubscription';
 import { PremiumDialog } from '@/components/PremiumDialog';
 import { toast } from 'sonner';
-import { Plus, Search, Pencil, Trash2, BookOpen, MessageCircle, Filter, ExternalLink, Heart, Tag, X, Crown, Globe } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, BookOpen, MessageCircle, Filter, ExternalLink, Heart, Tag, X, Crown, Globe, Eye } from 'lucide-react';
+import { PrayerDetailDialog } from '@/components/PrayerDetailDialog';
 import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 
@@ -59,6 +60,7 @@ export default function PrayersAdvices() {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showCategoryDialog, setShowCategoryDialog] = useState(false);
   const [showPremiumDialog, setShowPremiumDialog] = useState(false);
+  const [detailItem, setDetailItem] = useState<PrayerAdvice | null>(null);
   const [editingItem, setEditingItem] = useState<PrayerAdvice | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<ItemType>('all');
@@ -685,15 +687,25 @@ export default function PrayersAdvices() {
                       <span className="text-xs text-muted-foreground">
                         {format(new Date(item.created_at), 'dd MMM yyyy', { locale: idLocale })}
                       </span>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 text-xs"
-                        onClick={() => handleCopyToWhatsApp(item)}
-                      >
-                        <ExternalLink className="w-3 h-3 mr-1" />
-                        Share WA
-                      </Button>
+                      <div className="flex gap-1">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 text-xs"
+                          onClick={() => setDetailItem(item)}
+                        >
+                          <Eye className="w-3 h-3 mr-1" />
+                          Selengkapnya
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 text-xs"
+                          onClick={() => handleCopyToWhatsApp(item)}
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                        </Button>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -827,6 +839,15 @@ export default function PrayersAdvices() {
           open={showPremiumDialog} 
           onOpenChange={setShowPremiumDialog}
           featureName="Doa & Nasehat Publik"
+        />
+
+        {/* Detail Dialog */}
+        <PrayerDetailDialog
+          item={detailItem}
+          open={!!detailItem}
+          onOpenChange={(open) => !open && setDetailItem(null)}
+          getCategoryColor={getCategoryColor}
+          onShare={handleCopyToWhatsApp}
         />
       </div>
 
