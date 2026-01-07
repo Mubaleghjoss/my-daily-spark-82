@@ -160,40 +160,69 @@ export function PremiumDialog({ open, onOpenChange, featureName }: PremiumDialog
         return;
       }
 
-      // Check max uses
+      // Check max uses (global limit)
       if (promo.max_uses && promo.current_uses >= promo.max_uses) {
         toast.error('Kode promo sudah mencapai batas penggunaan');
         return;
       }
 
-      // Check if already redeemed by user
-      const { data: existing } = await supabase
+      // Check if this specific promo already redeemed by user (same promo code)
+      const { data: existingRedemption } = await supabase
         .from('promo_code_redemptions')
         .select('id')
         .eq('promo_code_id', promo.id)
         .eq('user_id', user.id)
         .maybeSingle();
 
-      if (existing) {
-        toast.error('Anda sudah pernah menggunakan kode promo ini');
+      if (existingRedemption) {
+        toast.error('Anda sudah pernah menggunakan kode promo ini. Gunakan kode promo lain.');
         return;
       }
 
-      // Calculate expiration
-      const now = new Date();
-      const expiresAt = new Date(now);
-      expiresAt.setHours(expiresAt.getHours() + (promo.duration_hours || 0));
-      expiresAt.setDate(expiresAt.getDate() + (promo.duration_days || 0));
+      // Get current subscription to calculate new expiration
+      const { data: currentSub } = await supabase
+        .from('user_subscriptions')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle();
 
-      // Update user subscription - use upsert pattern
+      const now = new Date();
+      let newExpiresAt: Date;
+
+      // Calculate new expiration - add to existing if still active
+      if (currentSub && currentSub.is_active && currentSub.expires_at) {
+        const currentExpires = new Date(currentSub.expires_at);
+        // If current subscription is still valid, add duration to it
+        if (currentExpires > now) {
+          newExpiresAt = new Date(currentExpires);
+        } else {
+          newExpiresAt = new Date(now);
+        }
+      } else {
+        newExpiresAt = new Date(now);
+      }
+
+      // Add promo duration
+      newExpiresAt.setHours(newExpiresAt.getHours() + (promo.duration_hours || 0));
+      newExpiresAt.setDate(newExpiresAt.getDate() + (promo.duration_days || 0));
+
+      // Determine subscription type (use better one if upgrading)
+      const typeOrder = { 'none': 0, 'monthly': 1, 'yearly': 2, 'lifetime': 3 };
+      const currentType = currentSub?.subscription_type || 'none';
+      const promoType = promo.subscription_type;
+      const newType = (typeOrder[promoType as keyof typeof typeOrder] || 0) >= (typeOrder[currentType as keyof typeof typeOrder] || 0) 
+        ? promoType 
+        : currentType;
+
+      // Update or insert subscription
       const { error: subError } = await supabase
         .from('user_subscriptions')
         .upsert({
           user_id: user.id,
-          subscription_type: promo.subscription_type,
+          subscription_type: promoType === 'lifetime' ? 'lifetime' : newType,
           is_active: true,
-          started_at: now.toISOString(),
-          expires_at: promo.subscription_type === 'lifetime' ? null : expiresAt.toISOString(),
+          started_at: currentSub?.started_at || now.toISOString(),
+          expires_at: promoType === 'lifetime' ? null : newExpiresAt.toISOString(),
           updated_at: now.toISOString(),
         }, {
           onConflict: 'user_id',
@@ -205,15 +234,11 @@ export function PremiumDialog({ open, onOpenChange, featureName }: PremiumDialog
       }
 
       // Record redemption
-      const { error: redemptionError } = await supabase.from('promo_code_redemptions').insert({
+      await supabase.from('promo_code_redemptions').insert({
         promo_code_id: promo.id,
         user_id: user.id,
-        expires_at: expiresAt.toISOString(),
+        expires_at: newExpiresAt.toISOString(),
       });
-
-      if (redemptionError) {
-        console.error('Redemption record error:', redemptionError);
-      }
 
       // Update promo usage count
       await supabase
@@ -227,7 +252,7 @@ export function PremiumDialog({ open, onOpenChange, featureName }: PremiumDialog
       if (promo.duration_hours > 0) durationParts.push(`${promo.duration_hours} jam`);
       const durationText = durationParts.join(' ') || 'selamanya';
 
-      toast.success(`🎉 Selamat! Anda sekarang Premium ${promo.subscription_type} selama ${durationText}!`);
+      toast.success(`🎉 Selamat! Premium Anda bertambah ${durationText}!`);
       setPromoCode('');
       onOpenChange(false);
       
