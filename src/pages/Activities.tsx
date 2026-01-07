@@ -335,11 +335,11 @@ export default function Activities() {
           {/* Status badge */}
           {getStatusBadge(isCompletedToday)}
 
-          {/* Add Sub-Activity Button */}
+          {/* Add Sub-Activity Button - Always visible */}
           <Button
             variant="ghost"
             size="icon"
-            className="shrink-0 opacity-0 group-hover:opacity-100 text-primary hover:text-primary hover:bg-primary/10"
+            className="shrink-0 text-muted-foreground hover:text-primary hover:bg-primary/10"
             onClick={() => openAddSubActivity(activity.id, activity.title)}
             title="Tambah sub-aktivitas"
           >
@@ -348,7 +348,7 @@ export default function Activities() {
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="shrink-0 opacity-0 group-hover:opacity-100">
+              <Button variant="ghost" size="icon" className="shrink-0 text-muted-foreground hover:text-foreground">
                 <MoreHorizontal className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
