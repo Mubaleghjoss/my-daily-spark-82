@@ -398,6 +398,7 @@ export default function Pomodoro() {
 
     if (currentType === 'focus') {
       if (user) {
+        // Save pomodoro session
         await supabase.from('pomodoro_sessions').insert({
           user_id: user.id,
           duration_minutes: settings.focus,
@@ -405,6 +406,28 @@ export default function Pomodoro() {
           activity_id: currentActivityId,
         });
         fetchTodayHistory();
+
+        // Auto-complete activity if selected
+        if (currentActivityId) {
+          const today = new Date().toISOString().split('T')[0];
+          
+          // Check if already completed today
+          const { data: existingCompletion } = await supabase
+            .from('activity_completions')
+            .select('id')
+            .eq('activity_id', currentActivityId)
+            .eq('user_id', user.id)
+            .gte('completed_at', today)
+            .maybeSingle();
+
+          // Insert completion if not already completed today
+          if (!existingCompletion) {
+            await supabase.from('activity_completions').insert({
+              activity_id: currentActivityId,
+              user_id: user.id,
+            });
+          }
+        }
       }
 
       const newSessions = currentSessions + 1;
