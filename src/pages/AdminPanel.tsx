@@ -90,6 +90,14 @@ interface UserData {
   pomodoro_sessions: any[];
 }
 
+interface PromoRedemption {
+  user_id: string;
+  redeemed_at: string;
+  profiles: {
+    display_name: string | null;
+  } | null;
+}
+
 interface PromoCode {
   id: string;
   code: string;
@@ -101,6 +109,7 @@ interface PromoCode {
   is_active: boolean;
   expires_at: string | null;
   created_at: string;
+  redemptions?: PromoRedemption[];
 }
 
 export default function AdminPanel() {
@@ -207,13 +216,56 @@ export default function AdminPanel() {
   async function fetchPromoCodes() {
     setLoadingPromos(true);
     try {
-      const { data, error } = await supabase
+      // Fetch promo codes
+      const { data: promoData, error: promoError } = await supabase
         .from('promo_codes')
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      setPromoCodes((data || []) as PromoCode[]);
+      if (promoError) throw promoError;
+
+      // Fetch redemptions
+      const { data: redemptionData, error: redemptionError } = await supabase
+        .from('promo_code_redemptions')
+        .select('promo_code_id, user_id, redeemed_at')
+        .order('redeemed_at', { ascending: false });
+
+      if (redemptionError) {
+        console.error('Error fetching redemptions:', redemptionError);
+      }
+
+      // Fetch profiles for redemption users
+      const userIds = [...new Set((redemptionData || []).map(r => r.user_id))];
+      let profilesMap: Record<string, string> = {};
+      
+      if (userIds.length > 0) {
+        const { data: profilesData } = await supabase
+          .from('profiles')
+          .select('user_id, display_name')
+          .in('user_id', userIds);
+        
+        profilesMap = (profilesData || []).reduce((acc, p) => {
+          acc[p.user_id] = p.display_name || 'User';
+          return acc;
+        }, {} as Record<string, string>);
+      }
+
+      // Map redemptions to promo codes
+      const promoCodesWithRedemptions = (promoData || []).map(promo => {
+        const promoRedemptions = (redemptionData || [])
+          .filter(r => r.promo_code_id === promo.id)
+          .map(r => ({
+            user_id: r.user_id,
+            redeemed_at: r.redeemed_at,
+            profiles: { display_name: profilesMap[r.user_id] || null }
+          }));
+        return {
+          ...promo,
+          redemptions: promoRedemptions
+        };
+      }) as PromoCode[];
+
+      setPromoCodes(promoCodesWithRedemptions);
     } catch (error) {
       console.error('Error fetching promo codes:', error);
       toast({
@@ -939,6 +991,7 @@ export default function AdminPanel() {
                           <TableHead>Tipe</TableHead>
                           <TableHead>Durasi</TableHead>
                           <TableHead>Penggunaan</TableHead>
+                          <TableHead>Pengguna</TableHead>
                           <TableHead>Status</TableHead>
                           <TableHead>Berlaku s.d</TableHead>
                           <TableHead className="text-right">Aksi</TableHead>
@@ -983,6 +1036,32 @@ export default function AdminPanel() {
                                 <span className={promo.max_uses && promo.current_uses >= promo.max_uses ? 'text-destructive' : ''}>
                                   {promo.current_uses}/{promo.max_uses || '∞'}
                                 </span>
+                              </TableCell>
+                              <TableCell>
+                                {promo.redemptions && promo.redemptions.length > 0 ? (
+                                  <div className="space-y-1 max-w-[200px]">
+                                    {promo.redemptions.slice(0, 3).map((r, idx) => (
+                                      <div key={idx} className="flex items-center gap-1 text-xs">
+                                        <Avatar className="h-4 w-4">
+                                          <AvatarFallback className="text-[8px] bg-primary/10">
+                                            {getInitials(r.profiles?.display_name || null)}
+                                          </AvatarFallback>
+                                        </Avatar>
+                                        <span className="truncate">{r.profiles?.display_name || 'User'}</span>
+                                        <span className="text-muted-foreground">
+                                          ({new Date(r.redeemed_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })})
+                                        </span>
+                                      </div>
+                                    ))}
+                                    {promo.redemptions.length > 3 && (
+                                      <span className="text-xs text-muted-foreground">
+                                        +{promo.redemptions.length - 3} lainnya
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">Belum ada</span>
+                                )}
                               </TableCell>
                               <TableCell>
                                 <Badge 

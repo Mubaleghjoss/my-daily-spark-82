@@ -125,9 +125,37 @@ export function PremiumDialog({ open, onOpenChange, featureName }: PremiumDialog
     }
   }, [open]);
 
-  const handleWhatsApp = (planName: string) => {
+  const handleWhatsApp = async (planName: string, price: string) => {
+    // Get user profile for structured message
+    let displayName = 'Pengguna';
+    let email = user?.email || 'tidak tersedia';
+    
+    if (user) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('display_name')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      
+      if (profile?.display_name) {
+        displayName = profile.display_name;
+      }
+    }
+
     const message = encodeURIComponent(
-      `Halo Admin, saya ingin berlangganan paket ${planName} untuk Aktivitas-Ku. Berikut bukti transfer saya.`
+`📱 *KONFIRMASI LANGGANAN AKTIVITAS-KU*
+━━━━━━━━━━━━━━━━━━━━━━
+
+📦 *Paket:* ${planName}
+💰 *Nominal:* ${price}
+
+👤 *Data Pengguna:*
+• Nama: ${displayName}
+• Email: ${email}
+• User ID: ${user?.id || '-'}
+
+📎 Berikut bukti transfer saya:
+`
     );
     window.open(`https://wa.me/6283818393029?text=${message}`, '_blank');
   };
@@ -378,21 +406,21 @@ export function PremiumDialog({ open, onOpenChange, featureName }: PremiumDialog
               <div className="flex flex-col sm:flex-row gap-2">
                 <Button 
                   className="flex-1 bg-green-600 hover:bg-green-700"
-                  onClick={() => handleWhatsApp('Bulanan (Rp 5.000)')}
+                  onClick={() => handleWhatsApp('Bulanan', 'Rp 5.000')}
                 >
                   <MessageCircle className="h-4 w-4 mr-2" />
                   Bulanan - Rp 5.000
                 </Button>
                 <Button 
                   className="flex-1 bg-green-600 hover:bg-green-700"
-                  onClick={() => handleWhatsApp('Tahunan (Rp 50.000)')}
+                  onClick={() => handleWhatsApp('Tahunan', 'Rp 50.000')}
                 >
                   <MessageCircle className="h-4 w-4 mr-2" />
                   Tahunan - Rp 50.000
                 </Button>
                 <Button 
                   className="flex-1 bg-green-600 hover:bg-green-700"
-                  onClick={() => handleWhatsApp('Selamanya (Rp 250.000)')}
+                  onClick={() => handleWhatsApp('Selamanya', 'Rp 250.000')}
                 >
                   <MessageCircle className="h-4 w-4 mr-2" />
                   Selamanya - Rp 250.000
