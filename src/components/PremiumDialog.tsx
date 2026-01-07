@@ -140,116 +140,38 @@ export function PremiumDialog({ open, onOpenChange, featureName }: PremiumDialog
 
     setIsRedeeming(true);
     try {
-      // Find promo code
-      const { data: promo, error: promoError } = await supabase
-        .from('promo_codes')
-        .select('*')
-        .eq('code', promoCode.trim().toUpperCase())
-        .eq('is_active', true)
-        .maybeSingle();
-
-      if (promoError) throw promoError;
-      if (!promo) {
-        toast.error('Kode promo tidak valid atau sudah tidak aktif');
-        return;
-      }
-
-      // Check if expired
-      if (promo.expires_at && new Date(promo.expires_at) < new Date()) {
-        toast.error('Kode promo sudah kedaluwarsa');
-        return;
-      }
-
-      // Check max uses (global limit)
-      if (promo.max_uses && promo.current_uses >= promo.max_uses) {
-        toast.error('Kode promo sudah mencapai batas penggunaan');
-        return;
-      }
-
-      // Check if this specific promo already redeemed by user (same promo code)
-      const { data: existingRedemption } = await supabase
-        .from('promo_code_redemptions')
-        .select('id')
-        .eq('promo_code_id', promo.id)
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      if (existingRedemption) {
-        toast.error('Anda sudah pernah menggunakan kode promo ini. Gunakan kode promo lain.');
-        return;
-      }
-
-      // Get current subscription to calculate new expiration
-      const { data: currentSub } = await supabase
-        .from('user_subscriptions')
-        .select('*')
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      const now = new Date();
-      let newExpiresAt: Date;
-
-      // Calculate new expiration - add to existing if still active
-      if (currentSub && currentSub.is_active && currentSub.expires_at) {
-        const currentExpires = new Date(currentSub.expires_at);
-        // If current subscription is still valid, add duration to it
-        if (currentExpires > now) {
-          newExpiresAt = new Date(currentExpires);
-        } else {
-          newExpiresAt = new Date(now);
-        }
-      } else {
-        newExpiresAt = new Date(now);
-      }
-
-      // Add promo duration
-      newExpiresAt.setHours(newExpiresAt.getHours() + (promo.duration_hours || 0));
-      newExpiresAt.setDate(newExpiresAt.getDate() + (promo.duration_days || 0));
-
-      // Determine subscription type (use better one if upgrading)
-      const typeOrder = { 'none': 0, 'monthly': 1, 'yearly': 2, 'lifetime': 3 };
-      const currentType = currentSub?.subscription_type || 'none';
-      const promoType = promo.subscription_type;
-      const newType = (typeOrder[promoType as keyof typeof typeOrder] || 0) >= (typeOrder[currentType as keyof typeof typeOrder] || 0) 
-        ? promoType 
-        : currentType;
-
-      // Update or insert subscription
-      const { error: subError } = await supabase
-        .from('user_subscriptions')
-        .upsert({
-          user_id: user.id,
-          subscription_type: promoType === 'lifetime' ? 'lifetime' : newType,
-          is_active: true,
-          started_at: currentSub?.started_at || now.toISOString(),
-          expires_at: promoType === 'lifetime' ? null : newExpiresAt.toISOString(),
-          updated_at: now.toISOString(),
-        }, {
-          onConflict: 'user_id',
-        });
-
-      if (subError) {
-        console.error('Subscription update error:', subError);
-        throw subError;
-      }
-
-      // Record redemption
-      await supabase.from('promo_code_redemptions').insert({
-        promo_code_id: promo.id,
-        user_id: user.id,
-        expires_at: newExpiresAt.toISOString(),
+      // Use atomic server-side RPC function for secure promo redemption
+      const { data, error } = await supabase.rpc('redeem_promo_code', {
+        p_code: promoCode.trim().toUpperCase()
       });
 
-      // Update promo usage count
-      await supabase
-        .from('promo_codes')
-        .update({ current_uses: promo.current_uses + 1 })
-        .eq('id', promo.id);
+      // Cast the response to expected type
+      const result = data as { duration_days?: number; duration_hours?: number; subscription_type?: string } | null;
 
-      // Calculate duration text
-      const durationParts = [];
-      if (promo.duration_days > 0) durationParts.push(`${promo.duration_days} hari`);
-      if (promo.duration_hours > 0) durationParts.push(`${promo.duration_hours} jam`);
+      if (error) {
+        // Map known error codes to user-friendly messages
+        const errorMessages: Record<string, string> = {
+          'PROMO_NOT_FOUND': 'Kode promo tidak valid',
+          'PROMO_INACTIVE': 'Kode promo sudah tidak aktif',
+          'PROMO_EXPIRED': 'Kode promo sudah kedaluwarsa',
+          'PROMO_MAX_USES': 'Kode promo sudah mencapai batas penggunaan',
+          'ALREADY_REDEEMED': 'Anda sudah pernah menggunakan kode promo ini',
+          'NOT_AUTHENTICATED': 'Anda harus login terlebih dahulu'
+        };
+        const message = errorMessages[error.message] || 'Gagal menggunakan kode promo. Silakan coba lagi.';
+        toast.error(message);
+        return;
+      }
+
+      // Calculate duration text for success message
+      const durationParts: string[] = [];
+      const promoResult = data as { duration_days?: number; duration_hours?: number } | null;
+      if (promoResult?.duration_days && promoResult.duration_days > 0) {
+        durationParts.push(`${promoResult.duration_days} hari`);
+      }
+      if (promoResult?.duration_hours && promoResult.duration_hours > 0) {
+        durationParts.push(`${promoResult.duration_hours} jam`);
+      }
       const durationText = durationParts.join(' ') || 'selamanya';
 
       toast.success(`🎉 Selamat! Premium Anda bertambah ${durationText}!`);
